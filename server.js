@@ -1,6 +1,7 @@
 require('dotenv').config()
 const express = require('express')
 const cors = require('cors')
+const path = require('path')
 const connectDB = require('./src/config/database')
 
 const app = express()
@@ -8,14 +9,25 @@ const app = express()
 // Conectar banco
 connectDB()
 
-// Middlewares
+// CORS - suporta múltiplas origens via CORS_ORIGINS
+const allowedOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())
+  : [process.env.FRONTEND_URL || 'http://localhost:5173']
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: function (origin, callback) {
+    // Permitir requests sem origin (mobile, curl, etc)
+    if (!origin) return callback(null, true)
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true)
+    }
+    return callback(new Error('Bloqueado pelo CORS'))
+  },
   credentials: true
 }))
 app.use(express.json())
 
-// Rotas
+// Rotas da API
 app.use('/api/auth', require('./src/routes/auth'))
 app.use('/api/produtos', require('./src/routes/produtos'))
 app.use('/api/vendas', require('./src/routes/vendas'))
@@ -29,6 +41,18 @@ app.use('/api/cupom', require('./src/routes/cupom'))
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Kallil 2.0 API rodando 🚀' })
 })
+
+// Em produção: servir o frontend buildado
+if (process.env.NODE_ENV === 'production') {
+  const frontendPath = path.join(__dirname, 'public')
+  app.use(express.static(frontendPath))
+  // SPA fallback - qualquer rota que não seja /api retorna o index.html
+  app.get('*', (req, res) => {
+    if (!req.path.startsWith('/api')) {
+      res.sendFile(path.join(frontendPath, 'index.html'))
+    }
+  })
+}
 
 // Handler de erros global
 app.use((err, req, res, next) => {
