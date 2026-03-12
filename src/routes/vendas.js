@@ -11,7 +11,7 @@ router.use(auth)
 // POST /api/vendas — finalizar venda
 router.post('/', async (req, res) => {
   try {
-    const { itens, desconto = 0, descontoTipo = 'valor', formaPagamento, clienteId, clienteNome, valorRecebido = 0, dataVencimento, observacoes } = req.body
+    const { itens, desconto = 0, descontoTipo = 'valor', formaPagamento, clienteId, clienteNome, valorRecebido = 0, dataVencimento, observacoes, caixaId } = req.body
 
     if (!itens || itens.length === 0) {
       return res.status(400).json({ message: 'A venda deve ter ao menos um item.' })
@@ -75,7 +75,8 @@ router.post('/', async (req, res) => {
       clienteId: clienteId || null,
       clienteNome: clienteNome || '',
       dataVencimento: formaPagamento === 'fiado' && dataVencimento ? new Date(dataVencimento) : null,
-      observacoes: observacoes || ''
+      observacoes: observacoes || '',
+      caixaId: caixaId || null
     })
 
     // Atualizar dívida do cliente se fiado
@@ -94,7 +95,7 @@ router.post('/', async (req, res) => {
 // POST /api/vendas/espera — colocar venda em espera
 router.post('/espera', async (req, res) => {
   try {
-    const { itens, desconto = 0, descontoTipo = 'valor', clienteNome } = req.body
+    const { itens, desconto = 0, descontoTipo = 'valor', clienteNome, caixaId } = req.body
 
     if (!itens || itens.length === 0) {
       return res.status(400).json({ message: 'A venda deve ter ao menos um item.' })
@@ -138,7 +139,8 @@ router.post('/espera', async (req, res) => {
       formaPagamento: 'dinheiro',
       status: 'espera',
       clienteNome: clienteNome || '',
-      hashEspera: crypto.randomBytes(8).toString('hex')
+      hashEspera: crypto.randomBytes(8).toString('hex'),
+      caixaId: caixaId || null
     })
 
     res.status(201).json(venda)

@@ -32,7 +32,8 @@ router.post('/register', async (req, res) => {
       user: {
         id: user._id, nome: user.nome, nomeNegocio: user.nomeNegocio,
         email: user.email, cnpj: user.cnpj, endereco: user.endereco,
-        cidade: user.cidade, estado: user.estado, taxaPrazo: user.taxaPrazo
+        cidade: user.cidade, estado: user.estado, taxaPrazo: user.taxaPrazo,
+        logoUrl: user.logoUrl, pdvCores: user.pdvCores
       }
     })
   } catch (error) {
@@ -61,7 +62,8 @@ router.post('/login', async (req, res) => {
       user: {
         id: user._id, nome: user.nome, nomeNegocio: user.nomeNegocio,
         email: user.email, cnpj: user.cnpj, endereco: user.endereco,
-        cidade: user.cidade, estado: user.estado, taxaPrazo: user.taxaPrazo
+        cidade: user.cidade, estado: user.estado, taxaPrazo: user.taxaPrazo,
+        logoUrl: user.logoUrl, pdvCores: user.pdvCores
       }
     })
   } catch (error) {
@@ -78,7 +80,8 @@ router.get('/me', auth, async (req, res) => {
       user: {
         id: user._id, nome: user.nome, nomeNegocio: user.nomeNegocio,
         email: user.email, cnpj: user.cnpj, endereco: user.endereco,
-        cidade: user.cidade, estado: user.estado, taxaPrazo: user.taxaPrazo
+        cidade: user.cidade, estado: user.estado, taxaPrazo: user.taxaPrazo,
+        logoUrl: user.logoUrl, pdvCores: user.pdvCores
       }
     })
   } catch (error) {
@@ -89,10 +92,13 @@ router.get('/me', auth, async (req, res) => {
 // PUT /api/auth/me — atualizar dados do negócio
 router.put('/me', auth, async (req, res) => {
   try {
-    const { nome, nomeNegocio, cnpj, endereco, cidade, estado, taxaPrazo } = req.body
+    const { nome, nomeNegocio, cnpj, endereco, cidade, estado, taxaPrazo, logoUrl, pdvCores } = req.body
+    const updateData = { nome, nomeNegocio, cnpj, endereco, cidade, estado, taxaPrazo }
+    if (logoUrl !== undefined) updateData.logoUrl = logoUrl
+    if (pdvCores) updateData.pdvCores = pdvCores
     const user = await User.findByIdAndUpdate(
       req.userId,
-      { nome, nomeNegocio, cnpj, endereco, cidade, estado, taxaPrazo },
+      updateData,
       { new: true, runValidators: true }
     )
     if (!user) return res.status(404).json({ message: 'Usuário não encontrado.' })
@@ -100,7 +106,8 @@ router.put('/me', auth, async (req, res) => {
       user: {
         id: user._id, nome: user.nome, nomeNegocio: user.nomeNegocio,
         email: user.email, cnpj: user.cnpj, endereco: user.endereco,
-        cidade: user.cidade, estado: user.estado, taxaPrazo: user.taxaPrazo
+        cidade: user.cidade, estado: user.estado, taxaPrazo: user.taxaPrazo,
+        logoUrl: user.logoUrl, pdvCores: user.pdvCores
       }
     })
   } catch (error) {

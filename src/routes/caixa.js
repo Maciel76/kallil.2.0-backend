@@ -7,45 +7,50 @@ const auth = require('../middleware/auth')
 
 router.use(auth)
 
-// POST /api/caixa/abrir
+// POST /api/caixa/abrir — abre um novo caixa (permite múltiplos)
 router.post('/abrir', async (req, res) => {
   try {
-    // Verificar se já existe caixa aberto
-    const caixaAberto = await Caixa.findOne({ userId: req.userId, status: 'aberto' })
-    if (caixaAberto) {
-      return res.status(400).json({ message: 'Já existe um caixa aberto. Feche-o antes de abrir outro.' })
-    }
+    const { valorInicial = 0, nome, operador } = req.body
 
-    const { valorInicial = 0 } = req.body
+    // Calcular próximo número de caixa
+    const caixasAbertos = await Caixa.find({ userId: req.userId, status: 'aberto' })
+    const numeros = caixasAbertos.map(c => c.numero || 0).filter(n => !isNaN(n))
+    const numero = numeros.length > 0
+      ? Math.max(...numeros) + 1
+      : 1
+
     const caixa = await Caixa.create({
       userId: req.userId,
+      numero,
+      nome: nome || `Caixa ${numero}`,
+      operador: operador || '',
       valorInicial,
       saldoFinal: valorInicial
     })
 
     res.status(201).json(caixa)
   } catch (error) {
-    res.status(500).json({ message: 'Erro ao abrir caixa.' })
+    console.error('Erro ao abrir caixa:', error)
+    res.status(500).json({ message: 'Erro ao abrir caixa.', error: error.message })
   }
 })
 
-// POST /api/caixa/fechar
-router.post('/fechar', async (req, res) => {
+// POST /api/caixa/fechar/:id — fecha um caixa específico
+router.post('/fechar/:id', async (req, res) => {
   try {
-    const caixa = await Caixa.findOne({ userId: req.userId, status: 'aberto' })
+    const caixa = await Caixa.findOne({ _id: req.params.id, userId: req.userId, status: 'aberto' })
     if (!caixa) {
-      return res.status(400).json({ message: 'Nenhum caixa aberto para fechar.' })
+      return res.status(400).json({ message: 'Caixa não encontrado ou já fechado.' })
     }
 
-    // Calcular totais do período
+    // Calcular totais baseado nas vendas vinculadas a este caixa
     const vendas = await Venda.find({
-      userId: req.userId,
-      createdAt: { $gte: caixa.aberturaEm },
+      caixaId: caixa._id,
       status: { $in: ['pago', 'fiado'] }
     })
     const despesas = await Despesa.find({
       userId: req.userId,
-      data: { $gte: caixa.aberturaEm }
+      data: { $gte: caixa.aberturaEm, $lte: new Date() }
     })
 
     const vendasPagas = vendas.filter(v => v.status === 'pago')
@@ -56,6 +61,9 @@ router.post('/fechar', async (req, res) => {
     const totalDespesas = despesas.reduce((acc, d) => acc + d.valor, 0)
     const lucroTotal = vendas.reduce((acc, v) => acc + (v.lucroTotal || 0), 0)
     const saldoFinal = caixa.valorInicial + totalVendas - totalDespesas
+
+    // Garantir campo numero para caixas antigos
+    if (!caixa.numero) caixa.numero = 1
 
     caixa.totalVendas = totalVendas
     caixa.totalVendasPrazo = totalVendasPrazo
@@ -68,27 +76,58 @@ router.post('/fechar', async (req, res) => {
 
     res.json(caixa)
   } catch (error) {
-    res.status(500).json({ message: 'Erro ao fechar caixa.' })
+    console.error('Erro ao fechar caixa:', error)
+    res.status(500).json({ message: 'Erro ao fechar caixa.', error: error.message })
   }
 })
 
-// GET /api/caixa/atual
+// GET /api/caixa/abertos — lista todos os caixas abertos
+router.get('/abertos', async (req, res) => {
+  try {
+    const caixas = await Caixa.find({ userId: req.userId, status: 'aberto' }).sort({ numero: 1 })
+    
+    // Calcular totais em tempo real para cada caixa
+    const caixasComTotais = await Promise.all(caixas.map(async (caixa) => {
+      const vendas = await Venda.find({
+        caixaId: caixa._id,
+        status: { $in: ['pago', 'fiado'] }
+      })
+
+      const vendasPagas = vendas.filter(v => v.status === 'pago')
+      const vendasFiado = vendas.filter(v => v.status === 'fiado')
+
+      const totalVendas = vendasPagas.reduce((acc, v) => acc + v.totalFinal, 0)
+      const totalVendasPrazo = vendasFiado.reduce((acc, v) => acc + v.totalFinal, 0)
+      const lucroTotal = vendas.reduce((acc, v) => acc + (v.lucroTotal || 0), 0)
+
+      return {
+        ...caixa.toObject(),
+        totalVendas,
+        totalVendasPrazo,
+        lucroTotal,
+        saldoFinal: caixa.valorInicial + totalVendas,
+        qtdVendas: vendasPagas.length
+      }
+    }))
+
+    res.json(caixasComTotais)
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao buscar caixas abertos.' })
+  }
+})
+
+// GET /api/caixa/atual — compatibilidade (retorna primeiro caixa aberto)
 router.get('/atual', async (req, res) => {
   try {
-    const caixa = await Caixa.findOne({ userId: req.userId, status: 'aberto' })
-    if (!caixa) {
-      return res.json({ aberto: false, caixa: null })
+    const caixas = await Caixa.find({ userId: req.userId, status: 'aberto' }).sort({ numero: 1 })
+    if (caixas.length === 0) {
+      return res.json({ aberto: false, caixa: null, caixas: [] })
     }
 
-    // Calcular em tempo real
+    const caixa = caixas[0]
     const vendas = await Venda.find({
-      userId: req.userId,
-      createdAt: { $gte: caixa.aberturaEm },
+      caixaId: caixa._id,
       status: { $in: ['pago', 'fiado'] }
-    })
-    const despesas = await Despesa.find({
-      userId: req.userId,
-      data: { $gte: caixa.aberturaEm }
     })
 
     const vendasPagas = vendas.filter(v => v.status === 'pago')
@@ -96,7 +135,6 @@ router.get('/atual', async (req, res) => {
 
     const totalVendas = vendasPagas.reduce((acc, v) => acc + v.totalFinal, 0)
     const totalVendasPrazo = vendasFiado.reduce((acc, v) => acc + v.totalFinal, 0)
-    const totalDespesas = despesas.reduce((acc, d) => acc + d.valor, 0)
     const lucroTotal = vendas.reduce((acc, v) => acc + (v.lucroTotal || 0), 0)
 
     res.json({
@@ -105,11 +143,11 @@ router.get('/atual', async (req, res) => {
         ...caixa.toObject(),
         totalVendas,
         totalVendasPrazo,
-        totalDespesas,
         lucroTotal,
-        saldoFinal: caixa.valorInicial + totalVendas - totalDespesas,
+        saldoFinal: caixa.valorInicial + totalVendas,
         qtdVendas: vendasPagas.length
-      }
+      },
+      caixas: caixas.map(c => ({ _id: c._id, numero: c.numero, nome: c.nome, operador: c.operador }))
     })
   } catch (error) {
     res.status(500).json({ message: 'Erro ao buscar caixa.' })
@@ -125,6 +163,39 @@ router.get('/historico', async (req, res) => {
     res.json(caixas)
   } catch (error) {
     res.status(500).json({ message: 'Erro ao buscar histórico de caixas.' })
+  }
+})
+
+// GET /api/caixa/:id — detalhes de um caixa específico
+router.get('/:id', async (req, res) => {
+  try {
+    const caixa = await Caixa.findOne({ _id: req.params.id, userId: req.userId })
+    if (!caixa) {
+      return res.status(404).json({ message: 'Caixa não encontrado.' })
+    }
+
+    const vendas = await Venda.find({
+      caixaId: caixa._id,
+      status: { $in: ['pago', 'fiado'] }
+    })
+
+    const vendasPagas = vendas.filter(v => v.status === 'pago')
+    const vendasFiado = vendas.filter(v => v.status === 'fiado')
+
+    const totalVendas = vendasPagas.reduce((acc, v) => acc + v.totalFinal, 0)
+    const totalVendasPrazo = vendasFiado.reduce((acc, v) => acc + v.totalFinal, 0)
+    const lucroTotal = vendas.reduce((acc, v) => acc + (v.lucroTotal || 0), 0)
+
+    res.json({
+      ...caixa.toObject(),
+      totalVendas,
+      totalVendasPrazo,
+      lucroTotal,
+      saldoFinal: caixa.valorInicial + totalVendas,
+      qtdVendas: vendasPagas.length
+    })
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao buscar caixa.' })
   }
 })
 

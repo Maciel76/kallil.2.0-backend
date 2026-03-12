@@ -37,6 +37,17 @@ const userSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
+  logoUrl: {
+    type: String,
+    default: ''
+  },
+  pdvCores: {
+    headerBg: { type: String, default: '#1e293b' },
+    headerText: { type: String, default: '#ffffff' },
+    destaque: { type: String, default: '#16a34a' },
+    fundo: { type: String, default: '#eef2ff' },
+    painelBg: { type: String, default: '#ffffff' }
+  },
   email: {
     type: String,
     required: [true, 'E-mail é obrigatório'],

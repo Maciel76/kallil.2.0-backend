@@ -6,6 +6,19 @@ const caixaSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  numero: {
+    type: Number,
+    default: 1,
+    min: 1
+  },
+  nome: {
+    type: String,
+    default: ''
+  },
+  operador: {
+    type: String,
+    default: ''
+  },
   valorInicial: {
     type: Number,
     required: true,
