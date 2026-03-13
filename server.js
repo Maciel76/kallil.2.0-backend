@@ -25,10 +25,12 @@ app.use(cors({
   },
   credentials: true
 }))
-app.use(express.json())
+app.use(express.json({ limit: '5mb' }))
 
 // Rotas da API
 app.use('/api/auth', require('./src/routes/auth'))
+app.use('/api/admin', require('./src/routes/admin'))
+app.use('/api/operadores', require('./src/routes/operadores'))
 app.use('/api/produtos', require('./src/routes/produtos'))
 app.use('/api/vendas', require('./src/routes/vendas'))
 app.use('/api/despesas', require('./src/routes/despesas'))

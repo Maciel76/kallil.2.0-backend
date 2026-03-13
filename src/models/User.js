@@ -9,8 +9,8 @@ const userSchema = new mongoose.Schema({
   },
   nomeNegocio: {
     type: String,
-    required: [true, 'Nome do negócio é obrigatório'],
-    trim: true
+    trim: true,
+    default: ''
   },
   cnpj: {
     type: String,
@@ -60,6 +60,20 @@ const userSchema = new mongoose.Schema({
     required: [true, 'Senha é obrigatória'],
     minlength: 6,
     select: false
+  },
+  role: {
+    type: String,
+    enum: ['admin', 'dono', 'operador'],
+    default: 'dono'
+  },
+  donoId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  ativo: {
+    type: Boolean,
+    default: true
   }
 }, { timestamps: true })
 
@@ -73,6 +87,11 @@ userSchema.pre('save', async function (next) {
 // Comparar senha
 userSchema.methods.compararSenha = async function (senhaInformada) {
   return await bcrypt.compare(senhaInformada, this.senha)
+}
+
+// Para operador, retorna o donoId (dados do negócio ficam no dono)
+userSchema.methods.getUserIdEfetivo = function () {
+  return this.role === 'operador' && this.donoId ? this.donoId : this._id
 }
 
 module.exports = mongoose.model('User', userSchema)

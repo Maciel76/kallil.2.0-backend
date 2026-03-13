@@ -138,4 +138,79 @@ router.get('/vendas', async (req, res) => {
   }
 })
 
+// GET /api/relatorios/caixas-resumo?periodo=hoje|ontem|7dias|30dias|mes
+router.get('/caixas-resumo', async (req, res) => {
+  try {
+    const { periodo = 'hoje' } = req.query
+    const agora = new Date()
+    let inicio, fim
+
+    switch (periodo) {
+      case 'hoje':
+        inicio = new Date(agora); inicio.setHours(0, 0, 0, 0)
+        fim = new Date(agora); fim.setHours(23, 59, 59, 999)
+        break
+      case 'ontem':
+        inicio = new Date(agora); inicio.setDate(inicio.getDate() - 1); inicio.setHours(0, 0, 0, 0)
+        fim = new Date(agora); fim.setDate(fim.getDate() - 1); fim.setHours(23, 59, 59, 999)
+        break
+      case '7dias':
+        inicio = new Date(agora); inicio.setDate(inicio.getDate() - 7); inicio.setHours(0, 0, 0, 0)
+        fim = new Date(agora); fim.setHours(23, 59, 59, 999)
+        break
+      case '30dias':
+        inicio = new Date(agora); inicio.setDate(inicio.getDate() - 30); inicio.setHours(0, 0, 0, 0)
+        fim = new Date(agora); fim.setHours(23, 59, 59, 999)
+        break
+      case 'mes':
+        inicio = new Date(agora.getFullYear(), agora.getMonth(), 1)
+        fim = new Date(agora); fim.setHours(23, 59, 59, 999)
+        break
+      default:
+        inicio = new Date(agora); inicio.setHours(0, 0, 0, 0)
+        fim = new Date(agora); fim.setHours(23, 59, 59, 999)
+    }
+
+    const Caixa = require('../models/Caixa')
+
+    const caixas = await Caixa.find({
+      userId: req.userId,
+      status: 'fechado',
+      fechamentoEm: { $gte: inicio, $lte: fim }
+    }).sort({ fechamentoEm: -1 })
+
+    const totalAbertura = caixas.reduce((acc, c) => acc + c.valorInicial, 0)
+    const totalFechamento = caixas.reduce((acc, c) => acc + (c.valorFechamento || 0), 0)
+    const totalVendas = caixas.reduce((acc, c) => acc + c.totalVendas, 0)
+    const totalDespesas = caixas.reduce((acc, c) => acc + c.totalDespesas, 0)
+    const lucroEstimado = caixas.reduce((acc, c) => acc + c.lucroTotal, 0)
+
+    res.json({
+      caixas: caixas.map(c => ({
+        id: c._id,
+        nome: c.nome,
+        operador: c.operador,
+        valorInicial: c.valorInicial,
+        valorFechamento: c.valorFechamento,
+        totalVendas: c.totalVendas,
+        totalDespesas: c.totalDespesas,
+        lucroTotal: c.lucroTotal,
+        saldoFinal: c.saldoFinal,
+        aberturaEm: c.aberturaEm,
+        fechamentoEm: c.fechamentoEm
+      })),
+      resumo: {
+        totalCaixas: caixas.length,
+        totalAbertura,
+        totalFechamento,
+        totalVendas,
+        totalDespesas,
+        lucroEstimado
+      }
+    })
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao buscar resumo de caixas.' })
+  }
+})
+
 module.exports = router

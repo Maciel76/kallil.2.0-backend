@@ -10,7 +10,19 @@ router.use(auth)
 // POST /api/caixa/abrir — abre um novo caixa (permite múltiplos)
 router.post('/abrir', async (req, res) => {
   try {
-    const { valorInicial = 0, nome, operador } = req.body
+    const { valorInicial = 0, nome } = req.body
+
+    // Se for dono, operador fica como '-----' até um operador entrar
+    // Se for operador (abrindo diretamente), preenche o nome
+    let operadorNome = '-----'
+    let operadorId = null
+
+    if (req.userRole === 'operador') {
+      const User = require('../models/User')
+      const currentUser = await User.findById(req.userRealId)
+      operadorNome = currentUser ? currentUser.nome : ''
+      operadorId = req.userRealId
+    }
 
     // Calcular próximo número de caixa
     const caixasAbertos = await Caixa.find({ userId: req.userId, status: 'aberto' })
@@ -23,7 +35,8 @@ router.post('/abrir', async (req, res) => {
       userId: req.userId,
       numero,
       nome: nome || `Caixa ${numero}`,
-      operador: operador || '',
+      operador: operadorNome,
+      operadorId,
       valorInicial,
       saldoFinal: valorInicial
     })
@@ -35,9 +48,42 @@ router.post('/abrir', async (req, res) => {
   }
 })
 
+// POST /api/caixa/entrar/:id — operador entra em um caixa existente
+router.post('/entrar/:id', async (req, res) => {
+  try {
+    const { valorAbertura } = req.body
+    const caixa = await Caixa.findOne({ _id: req.params.id, userId: req.userId, status: 'aberto' })
+    if (!caixa) {
+      return res.status(400).json({ message: 'Caixa não encontrado ou já fechado.' })
+    }
+
+    // Verificar se já está em uso por outro operador
+    if (caixa.operadorId && caixa.operadorId.toString() !== req.userRealId.toString()) {
+      return res.status(400).json({ message: 'Este caixa já está em uso por outro operador.' })
+    }
+
+    const User = require('../models/User')
+    const operador = await User.findById(req.userRealId)
+
+    caixa.operador = operador ? operador.nome : ''
+    caixa.operadorId = req.userRealId
+    if (valorAbertura !== undefined && valorAbertura !== null) {
+      caixa.valorInicial = valorAbertura
+      caixa.saldoFinal = valorAbertura
+    }
+    await caixa.save()
+
+    res.json(caixa)
+  } catch (error) {
+    console.error('Erro ao entrar no caixa:', error)
+    res.status(500).json({ message: 'Erro ao entrar no caixa.', error: error.message })
+  }
+})
+
 // POST /api/caixa/fechar/:id — fecha um caixa específico
 router.post('/fechar/:id', async (req, res) => {
   try {
+    const { valorFechamento } = req.body
     const caixa = await Caixa.findOne({ _id: req.params.id, userId: req.userId, status: 'aberto' })
     if (!caixa) {
       return res.status(400).json({ message: 'Caixa não encontrado ou já fechado.' })
@@ -70,6 +116,9 @@ router.post('/fechar/:id', async (req, res) => {
     caixa.totalDespesas = totalDespesas
     caixa.lucroTotal = lucroTotal
     caixa.saldoFinal = saldoFinal
+    if (valorFechamento !== undefined && valorFechamento !== null) {
+      caixa.valorFechamento = valorFechamento
+    }
     caixa.status = 'fechado'
     caixa.fechamentoEm = new Date()
     await caixa.save()

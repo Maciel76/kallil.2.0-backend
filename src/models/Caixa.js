@@ -49,6 +49,15 @@ const caixaSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  valorFechamento: {
+    type: Number,
+    default: null
+  },
+  operadorId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
   status: {
     type: String,
     enum: ['aberto', 'fechado'],

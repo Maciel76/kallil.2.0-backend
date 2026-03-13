@@ -45,18 +45,48 @@ async function seed() {
     await mongoose.connect(process.env.MONGODB_URI)
     console.log('✅ Conectado ao MongoDB')
 
-    // Criar usuário de teste (se não existir)
+    // Criar admin (se não existir)
+    let admin = await User.findOne({ email: 'admin@kallil.com' })
+    if (!admin) {
+      admin = await User.create({
+        nome: 'Administrador',
+        email: 'admin@kallil.com',
+        senha: 'admin123',
+        role: 'admin'
+      })
+      console.log('🔑 Admin criado: admin@kallil.com / admin123')
+    } else {
+      console.log('🔑 Admin já existe: admin@kallil.com / admin123')
+    }
+
+    // Criar usuário de teste / dono (se não existir)
     let user = await User.findOne({ email: 'teste@kallil.com' })
     if (!user) {
       user = await User.create({
         nome: 'Usuário Teste',
         nomeNegocio: 'Lanchonete do Teste',
         email: 'teste@kallil.com',
-        senha: '123456'
+        senha: '123456',
+        role: 'dono'
       })
-      console.log('👤 Usuário de teste criado: teste@kallil.com / 123456')
+      console.log('👤 Dono de teste criado: teste@kallil.com / 123456')
     } else {
-      console.log('👤 Usuário de teste já existe: teste@kallil.com / 123456')
+      console.log('👤 Dono de teste já existe: teste@kallil.com / 123456')
+    }
+
+    // Criar operador de teste (se não existir)
+    let operador = await User.findOne({ email: 'operador@kallil.com' })
+    if (!operador) {
+      operador = await User.create({
+        nome: 'Operador Teste',
+        email: 'operador@kallil.com',
+        senha: '123456',
+        role: 'operador',
+        donoId: user._id
+      })
+      console.log('🧑‍💼 Operador criado: operador@kallil.com / 123456')
+    } else {
+      console.log('🧑‍💼 Operador já existe: operador@kallil.com / 123456')
     }
 
     // Limpar produtos antigos do usuário de teste
@@ -70,8 +100,9 @@ async function seed() {
     console.log(`📦 ${produtosSeed.length} produtos inseridos com sucesso!`)
     console.log('')
     console.log('=== DADOS DE ACESSO ===')
-    console.log('Email: teste@kallil.com')
-    console.log('Senha: 123456')
+    console.log('Admin:    admin@kallil.com / admin123')
+    console.log('Dono:     teste@kallil.com / 123456')
+    console.log('Operador: operador@kallil.com / 123456')
     console.log('=======================')
 
     await mongoose.disconnect()

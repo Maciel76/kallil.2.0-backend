@@ -31,7 +31,7 @@ router.post('/register', async (req, res) => {
       token,
       user: {
         id: user._id, nome: user.nome, nomeNegocio: user.nomeNegocio,
-        email: user.email, cnpj: user.cnpj, endereco: user.endereco,
+        email: user.email, role: user.role, cnpj: user.cnpj, endereco: user.endereco,
         cidade: user.cidade, estado: user.estado, taxaPrazo: user.taxaPrazo,
         logoUrl: user.logoUrl, pdvCores: user.pdvCores
       }
@@ -61,7 +61,7 @@ router.post('/login', async (req, res) => {
       token,
       user: {
         id: user._id, nome: user.nome, nomeNegocio: user.nomeNegocio,
-        email: user.email, cnpj: user.cnpj, endereco: user.endereco,
+        email: user.email, role: user.role, cnpj: user.cnpj, endereco: user.endereco,
         cidade: user.cidade, estado: user.estado, taxaPrazo: user.taxaPrazo,
         logoUrl: user.logoUrl, pdvCores: user.pdvCores
       }
@@ -74,16 +74,27 @@ router.post('/login', async (req, res) => {
 // GET /api/auth/me
 router.get('/me', auth, async (req, res) => {
   try {
-    const user = await User.findById(req.userId)
+    const user = await User.findById(req.userRealId)
     if (!user) return res.status(404).json({ message: 'Usuário não encontrado.' })
-    res.json({
-      user: {
-        id: user._id, nome: user.nome, nomeNegocio: user.nomeNegocio,
-        email: user.email, cnpj: user.cnpj, endereco: user.endereco,
-        cidade: user.cidade, estado: user.estado, taxaPrazo: user.taxaPrazo,
-        logoUrl: user.logoUrl, pdvCores: user.pdvCores
+
+    const userData = {
+      id: user._id, nome: user.nome, nomeNegocio: user.nomeNegocio,
+      email: user.email, role: user.role, cnpj: user.cnpj, endereco: user.endereco,
+      cidade: user.cidade, estado: user.estado, taxaPrazo: user.taxaPrazo,
+      logoUrl: user.logoUrl, pdvCores: user.pdvCores
+    }
+
+    // Operador herda logoUrl, pdvCores e nomeNegocio do dono
+    if (user.role === 'operador' && user.donoId) {
+      const dono = await User.findById(user.donoId)
+      if (dono) {
+        userData.logoUrl = dono.logoUrl
+        userData.pdvCores = dono.pdvCores
+        userData.nomeNegocio = dono.nomeNegocio
       }
-    })
+    }
+
+    res.json({ user: userData })
   } catch (error) {
     res.status(500).json({ message: 'Erro interno do servidor.' })
   }
@@ -105,7 +116,7 @@ router.put('/me', auth, async (req, res) => {
     res.json({
       user: {
         id: user._id, nome: user.nome, nomeNegocio: user.nomeNegocio,
-        email: user.email, cnpj: user.cnpj, endereco: user.endereco,
+        email: user.email, role: user.role, cnpj: user.cnpj, endereco: user.endereco,
         cidade: user.cidade, estado: user.estado, taxaPrazo: user.taxaPrazo,
         logoUrl: user.logoUrl, pdvCores: user.pdvCores
       }
