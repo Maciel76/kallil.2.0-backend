@@ -16,6 +16,10 @@ const produtoSchema = new mongoose.Schema({
     trim: true,
     default: ''
   },
+  codigosAdicionais: {
+    type: [String],
+    default: []
+  },
   categoria: {
     type: String,
     default: 'Geral',
@@ -58,5 +62,6 @@ const produtoSchema = new mongoose.Schema({
 // Índice para busca por código de barras
 produtoSchema.index({ userId: 1, codigoBarras: 1 })
 produtoSchema.index({ userId: 1, nome: 1 })
+produtoSchema.index({ userId: 1, codigosAdicionais: 1 })
 
 module.exports = mongoose.model('Produto', produtoSchema)

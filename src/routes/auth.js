@@ -55,7 +55,27 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: 'E-mail ou senha incorretos.' })
     }
 
+    if (!user.ativo) {
+      return res.status(403).json({ message: 'Conta desativada.' })
+    }
+
     const token = gerarToken(user._id)
+
+    // Se for operador, enriquecer com dados do dono
+    if (user.role === 'operador') {
+      const dono = await User.findById(user.donoId)
+      if (!dono || !dono.ativo) {
+        return res.status(403).json({ message: 'Negócio desativado.' })
+      }
+      return res.json({
+        token,
+        user: {
+          id: user._id, nome: user.nome, email: user.email,
+          role: user.role, donoId: user.donoId,
+          nomeNegocio: dono.nomeNegocio, logoUrl: dono.logoUrl, pdvCores: dono.pdvCores
+        }
+      })
+    }
 
     res.json({
       token,

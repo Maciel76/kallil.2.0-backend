@@ -19,7 +19,8 @@ router.get('/', async (req, res) => {
     if (busca) {
       filtro.$or = [
         { nome: { $regex: busca, $options: 'i' } },
-        { codigoBarras: { $regex: busca, $options: 'i' } }
+        { codigoBarras: { $regex: busca, $options: 'i' } },
+        { codigosAdicionais: { $regex: busca, $options: 'i' } }
       ]
     }
 
@@ -67,10 +68,14 @@ router.get('/estatisticas', async (req, res) => {
 // GET /api/produtos/barcode/:codigo — Buscar por código de barras
 router.get('/barcode/:codigo', async (req, res) => {
   try {
+    const codigo = req.params.codigo
     const produto = await Produto.findOne({
       userId: req.userId,
-      codigoBarras: req.params.codigo,
-      ativo: true
+      ativo: true,
+      $or: [
+        { codigoBarras: codigo },
+        { codigosAdicionais: codigo }
+      ]
     })
 
     if (!produto) return res.status(404).json({ message: 'Produto não encontrado.' })
@@ -96,7 +101,7 @@ router.get('/categorias', async (req, res) => {
 // POST /api/produtos — Criar produto
 router.post('/', async (req, res) => {
   try {
-    const { nome, codigoBarras, categoria, unidade, precoVenda, precoCusto, estoque, estoqueMinimo } = req.body
+    const { nome, codigoBarras, codigosAdicionais, categoria, unidade, precoVenda, precoCusto, estoque, estoqueMinimo } = req.body
 
     if (!nome || precoVenda === undefined) {
       return res.status(400).json({ message: 'Nome e preço de venda são obrigatórios.' })
@@ -111,12 +116,26 @@ router.post('/', async (req, res) => {
       })
       if (existente) {
         return res.status(400).json({ message: 'Já existe um produto com este código de barras.' })
+
+          // Verificar duplicatas nos códigos adicionais
+          const todosOsCodigos = [codigoBarras, ...(codigosAdicionais || [])].filter(Boolean)
+          for (const cod of todosOsCodigos) {
+            const existente = await Produto.findOne({
+              userId: req.userId,
+              ativo: true,
+              $or: [{ codigoBarras: cod }, { codigosAdicionais: cod }]
+            })
+            if (existente) {
+              return res.status(400).json({ message: `Já existe um produto com o código "${cod}".` })
+            }
+          }
       }
     }
 
     const produto = await Produto.create({
       userId: req.userId,
-      nome, codigoBarras, categoria, unidade, precoVenda, precoCusto, estoque, estoqueMinimo
+      nome, codigoBarras, codigosAdicionais: codigosAdicionais || [],
+      categoria, unidade, precoVenda, precoCusto, estoque, estoqueMinimo
     })
 
     res.status(201).json(produto)
@@ -128,16 +147,17 @@ router.post('/', async (req, res) => {
 // PUT /api/produtos/:id — Atualizar produto
 router.put('/:id', async (req, res) => {
   try {
-    // Verificar código de barras duplicado na edição
-    if (req.body.codigoBarras) {
+    // Verificar duplicatas em todos os códigos (principal + adicionais)
+    const codigos = [req.body.codigoBarras, ...(req.body.codigosAdicionais || [])].filter(Boolean)
+    for (const cod of codigos) {
       const existente = await Produto.findOne({
         userId: req.userId,
-        codigoBarras: req.body.codigoBarras,
         ativo: true,
-        _id: { $ne: req.params.id }
+        _id: { $ne: req.params.id },
+        $or: [{ codigoBarras: cod }, { codigosAdicionais: cod }]
       })
       if (existente) {
-        return res.status(400).json({ message: 'Já existe um produto com este código de barras.' })
+        return res.status(400).json({ message: `Já existe um produto com o código "${cod}".` })
       }
     }
 
