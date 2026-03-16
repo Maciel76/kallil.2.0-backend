@@ -3,8 +3,10 @@ const router = express.Router()
 const Cliente = require('../models/Cliente')
 const Venda = require('../models/Venda')
 const auth = require('../middleware/auth')
+const { verificarAssinatura, verificarLimite } = require('../middleware/assinatura')
 
 router.use(auth)
+router.use(verificarAssinatura)
 
 // GET /api/clientes
 router.get('/', async (req, res) => {
@@ -28,7 +30,7 @@ router.get('/', async (req, res) => {
 })
 
 // POST /api/clientes
-router.post('/', async (req, res) => {
+router.post('/', verificarLimite('clientes'), async (req, res) => {
   try {
     const { nome, telefone, endereco } = req.body
     if (!nome) return res.status(400).json({ message: 'Nome é obrigatório.' })

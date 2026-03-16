@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken')
 const User = require('../models/User')
 const auth = require('../middleware/auth')
 const { authorize } = require('../middleware/auth')
+const { verificarAssinatura } = require('../middleware/assinatura')
 
 const gerarToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
@@ -56,6 +57,7 @@ router.post('/login', async (req, res) => {
 // === Rotas protegidas (dono gerencia seus operadores) ===
 router.use(auth)
 router.use(authorize('dono'))
+router.use(verificarAssinatura)
 
 // GET /api/operadores — listar operadores do dono
 router.get('/', async (req, res) => {
@@ -72,6 +74,25 @@ router.get('/', async (req, res) => {
 // POST /api/operadores — criar operador
 router.post('/', async (req, res) => {
   try {
+    // Verificar limite de operadores do plano
+    if (req.planoAtual !== 'pago') {
+      const PlanoConfig = require('../models/PlanoConfig')
+      const config = await PlanoConfig.getConfig()
+      const maxOp = config.gratuito.maxOperadores
+      if (maxOp >= 0) {
+        const totalOp = await User.countDocuments({ donoId: req.userId, role: 'operador' })
+        if (totalOp >= maxOp) {
+          return res.status(403).json({
+            message: 'Limite de operadores do plano gratuito atingido. Faça upgrade para o plano profissional.',
+            limiteAtingido: true,
+            recurso: 'operadores',
+            atual: totalOp,
+            limite: maxOp
+          })
+        }
+      }
+    }
+
     const { nome, email, senha } = req.body
     if (!nome || !email || !senha) {
       return res.status(400).json({ message: 'Nome, e-mail e senha são obrigatórios.' })

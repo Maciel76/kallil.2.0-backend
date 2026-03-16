@@ -5,11 +5,13 @@ const Produto = require('../models/Produto')
 const Cliente = require('../models/Cliente')
 const crypto = require('crypto')
 const auth = require('../middleware/auth')
+const { verificarAssinatura, verificarLimite } = require('../middleware/assinatura')
 
 router.use(auth)
+router.use(verificarAssinatura)
 
 // POST /api/vendas — finalizar venda
-router.post('/', async (req, res) => {
+router.post('/', verificarLimite('vendas'), async (req, res) => {
   try {
     const { itens, desconto = 0, descontoTipo = 'valor', formaPagamento, clienteId, clienteNome, valorRecebido = 0, dataVencimento, observacoes, caixaId } = req.body
 

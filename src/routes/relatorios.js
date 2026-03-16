@@ -3,8 +3,10 @@ const router = express.Router()
 const mongoose = require('mongoose')
 const Venda = require('../models/Venda')
 const auth = require('../middleware/auth')
+const { verificarAssinatura } = require('../middleware/assinatura')
 
 router.use(auth)
+router.use(verificarAssinatura)
 
 // GET /api/relatorios/dashboard
 router.get('/dashboard', async (req, res) => {

@@ -33,7 +33,9 @@ router.post('/register', async (req, res) => {
         id: user._id, nome: user.nome, nomeNegocio: user.nomeNegocio,
         email: user.email, role: user.role, cnpj: user.cnpj, endereco: user.endereco,
         cidade: user.cidade, estado: user.estado, taxaPrazo: user.taxaPrazo,
-        logoUrl: user.logoUrl, pdvCores: user.pdvCores
+        logoUrl: user.logoUrl, pdvCores: user.pdvCores,
+        plano: user.plano, assinaturaStatus: user.assinaturaStatus,
+        assinaturaExpira: user.assinaturaExpira, testeExpira: user.testeExpira
       }
     })
   } catch (error) {
@@ -83,7 +85,9 @@ router.post('/login', async (req, res) => {
         id: user._id, nome: user.nome, nomeNegocio: user.nomeNegocio,
         email: user.email, role: user.role, cnpj: user.cnpj, endereco: user.endereco,
         cidade: user.cidade, estado: user.estado, taxaPrazo: user.taxaPrazo,
-        logoUrl: user.logoUrl, pdvCores: user.pdvCores
+        logoUrl: user.logoUrl, pdvCores: user.pdvCores,
+        plano: user.plano, assinaturaStatus: user.assinaturaStatus,
+        assinaturaExpira: user.assinaturaExpira, testeExpira: user.testeExpira
       }
     })
   } catch (error) {
@@ -101,7 +105,9 @@ router.get('/me', auth, async (req, res) => {
       id: user._id, nome: user.nome, nomeNegocio: user.nomeNegocio,
       email: user.email, role: user.role, cnpj: user.cnpj, endereco: user.endereco,
       cidade: user.cidade, estado: user.estado, taxaPrazo: user.taxaPrazo,
-      logoUrl: user.logoUrl, pdvCores: user.pdvCores
+      logoUrl: user.logoUrl, pdvCores: user.pdvCores,
+      plano: user.plano, assinaturaStatus: user.assinaturaStatus,
+      assinaturaExpira: user.assinaturaExpira, testeExpira: user.testeExpira
     }
 
     // Operador herda logoUrl, pdvCores e nomeNegocio do dono
@@ -138,7 +144,9 @@ router.put('/me', auth, async (req, res) => {
         id: user._id, nome: user.nome, nomeNegocio: user.nomeNegocio,
         email: user.email, role: user.role, cnpj: user.cnpj, endereco: user.endereco,
         cidade: user.cidade, estado: user.estado, taxaPrazo: user.taxaPrazo,
-        logoUrl: user.logoUrl, pdvCores: user.pdvCores
+        logoUrl: user.logoUrl, pdvCores: user.pdvCores,
+        plano: user.plano, assinaturaStatus: user.assinaturaStatus,
+        assinaturaExpira: user.assinaturaExpira, testeExpira: user.testeExpira
       }
     })
   } catch (error) {

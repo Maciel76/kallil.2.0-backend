@@ -4,11 +4,13 @@ const Caixa = require('../models/Caixa')
 const Venda = require('../models/Venda')
 const Despesa = require('../models/Despesa')
 const auth = require('../middleware/auth')
+const { verificarAssinatura, verificarLimite } = require('../middleware/assinatura')
 
 router.use(auth)
+router.use(verificarAssinatura)
 
 // POST /api/caixa/abrir — abre um novo caixa (permite múltiplos)
-router.post('/abrir', async (req, res) => {
+router.post('/abrir', verificarLimite('caixas'), async (req, res) => {
   try {
     const { valorInicial = 0, nome } = req.body
 

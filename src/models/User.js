@@ -74,6 +74,29 @@ const userSchema = new mongoose.Schema({
   ativo: {
     type: Boolean,
     default: true
+  },
+  // === Campos de Assinatura ===
+  plano: {
+    type: String,
+    enum: ['gratuito', 'pago'],
+    default: 'gratuito'
+  },
+  assinaturaStatus: {
+    type: String,
+    enum: ['ativo', 'teste', 'expirado', 'cancelado'],
+    default: 'teste'
+  },
+  assinaturaInicio: {
+    type: Date,
+    default: null
+  },
+  assinaturaExpira: {
+    type: Date,
+    default: null
+  },
+  testeExpira: {
+    type: Date,
+    default: null
   }
 }, { timestamps: true })
 
@@ -81,6 +104,18 @@ const userSchema = new mongoose.Schema({
 userSchema.pre('save', async function (next) {
   if (!this.isModified('senha')) return next()
   this.senha = await bcrypt.hash(this.senha, 12)
+  next()
+})
+
+// Inicializar período de teste para novos donos
+userSchema.pre('save', async function (next) {
+  if (this.isNew && this.role === 'dono' && !this.testeExpira) {
+    const PlanoConfig = mongoose.model('PlanoConfig')
+    const config = await PlanoConfig.getConfig()
+    this.testeExpira = new Date(Date.now() + config.diasTeste * 24 * 60 * 60 * 1000)
+    this.assinaturaStatus = 'teste'
+    this.plano = 'gratuito'
+  }
   next()
 })
 

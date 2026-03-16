@@ -2,9 +2,11 @@ const express = require('express')
 const router = express.Router()
 const Produto = require('../models/Produto')
 const auth = require('../middleware/auth')
+const { verificarAssinatura, verificarLimite } = require('../middleware/assinatura')
 
 // Todas as rotas exigem autenticação
 router.use(auth)
+router.use(verificarAssinatura)
 
 // GET /api/produtos — Listar produtos com filtros
 router.get('/', async (req, res) => {
@@ -99,7 +101,7 @@ router.get('/categorias', async (req, res) => {
 })
 
 // POST /api/produtos — Criar produto
-router.post('/', async (req, res) => {
+router.post('/', verificarLimite('produtos'), async (req, res) => {
   try {
     const { nome, codigoBarras, codigosAdicionais, categoria, unidade, precoVenda, precoCusto, estoque, estoqueMinimo } = req.body
 
