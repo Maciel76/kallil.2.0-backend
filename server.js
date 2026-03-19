@@ -42,6 +42,7 @@ app.use('/api/caixa', require('./src/routes/caixa'))
 app.use('/api/clientes', require('./src/routes/clientes'))
 app.use('/api/relatorios', require('./src/routes/relatorios'))
 app.use('/api/cupom', require('./src/routes/cupom'))
+app.use('/api/pagamento', require('./src/routes/pagamento'))
 
 // Rota de saúde
 app.get('/api/health', (req, res) => {
