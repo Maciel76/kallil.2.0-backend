@@ -45,48 +45,56 @@ async function seed() {
     await mongoose.connect(process.env.MONGODB_URI)
     console.log('✅ Conectado ao MongoDB')
 
+    // Senhas vêm do .env (com fallback para dev)
+    const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL || 'admin@kallil.com'
+    const ADMIN_PASS = process.env.SEED_ADMIN_PASS || 'admin123'
+    const DONO_EMAIL = process.env.SEED_DONO_EMAIL || 'teste@kallil.com'
+    const DONO_PASS = process.env.SEED_DONO_PASS || '123456'
+    const OPERADOR_EMAIL = process.env.SEED_OPERADOR_EMAIL || 'operador@kallil.com'
+    const OPERADOR_PASS = process.env.SEED_OPERADOR_PASS || '123456'
+
     // Criar admin (se não existir)
-    let admin = await User.findOne({ email: 'admin@kallil.com' })
+    let admin = await User.findOne({ email: ADMIN_EMAIL })
     if (!admin) {
       admin = await User.create({
         nome: 'Administrador',
-        email: 'admin@kallil.com',
-        senha: 'admin123',
+        email: ADMIN_EMAIL,
+        senha: ADMIN_PASS,
         role: 'admin'
       })
-      console.log('🔑 Admin criado: admin@kallil.com / admin123')
+      console.log(`🔑 Admin criado: ${ADMIN_EMAIL}`)
     } else {
-      console.log('🔑 Admin já existe: admin@kallil.com / admin123')
+      console.log(`🔑 Admin já existe: ${ADMIN_EMAIL}`)
     }
 
     // Criar usuário de teste / dono (se não existir)
-    let user = await User.findOne({ email: 'teste@kallil.com' })
+    let user = await User.findOne({ email: DONO_EMAIL })
     if (!user) {
       user = await User.create({
         nome: 'Usuário Teste',
         nomeNegocio: 'Lanchonete do Teste',
-        email: 'teste@kallil.com',
-        senha: '123456',
+        email: DONO_EMAIL,
+        senha: DONO_PASS,
         role: 'dono'
       })
-      console.log('👤 Dono de teste criado: teste@kallil.com / 123456')
+      console.log(`👤 Dono de teste criado: ${DONO_EMAIL}`)
     } else {
-      console.log('👤 Dono de teste já existe: teste@kallil.com / 123456')
+      console.log(`👤 Dono de teste já existe: ${DONO_EMAIL}`)
     }
 
     // Criar operador de teste (se não existir)
-    let operador = await User.findOne({ email: 'operador@kallil.com' })
+    let operador = await User.findOne({ email: OPERADOR_EMAIL })
     if (!operador) {
       operador = await User.create({
         nome: 'Operador Teste',
-        email: 'operador@kallil.com',
-        senha: '123456',
+        email: OPERADOR_EMAIL,
+        senha: OPERADOR_PASS,
         role: 'operador',
         donoId: user._id
       })
-      console.log('🧑‍💼 Operador criado: operador@kallil.com / 123456')
+      console.log(`🧑‍💼 Operador criado: ${OPERADOR_EMAIL}`)
     } else {
-      console.log('🧑‍💼 Operador já existe: operador@kallil.com / 123456')
+      console.log(`🧑‍💼 Operador já existe: ${OPERADOR_EMAIL}`)
     }
 
     // Limpar produtos antigos do usuário de teste
@@ -100,9 +108,10 @@ async function seed() {
     console.log(`📦 ${produtosSeed.length} produtos inseridos com sucesso!`)
     console.log('')
     console.log('=== DADOS DE ACESSO ===')
-    console.log('Admin:    admin@kallil.com / admin123')
-    console.log('Dono:     teste@kallil.com / 123456')
-    console.log('Operador: operador@kallil.com / 123456')
+    console.log(`Admin:    ${ADMIN_EMAIL}`)
+    console.log(`Dono:     ${DONO_EMAIL}`)
+    console.log(`Operador: ${OPERADOR_EMAIL}`)
+    console.log('Senhas definidas no .env (SEED_ADMIN_PASS, SEED_DONO_PASS, SEED_OPERADOR_PASS)')
     console.log('=======================')
 
     await mongoose.disconnect()

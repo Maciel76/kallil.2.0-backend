@@ -1,11 +1,10 @@
 const express = require('express')
 const router = express.Router()
-const { MercadoPagoConfig, Preference, Payment } = require('mercadopago')
+const { MercadoPagoConfig, Payment } = require('mercadopago')
 const User = require('../models/User')
 const Pagamento = require('../models/Pagamento')
 const PlanoConfig = require('../models/PlanoConfig')
 const auth = require('../middleware/auth')
-const crypto = require('crypto')
 
 // Inicializar Mercado Pago
 const mpClient = new MercadoPagoConfig({
@@ -13,10 +12,11 @@ const mpClient = new MercadoPagoConfig({
 })
 
 // =============================================
-// POST /api/pagamento/criar-preferencia
-// Cria uma preferência de pagamento no MP
+// POST /api/pagamento/pix
+// Cria um pagamento PIX direto via API do MP
+// Retorna QR Code e código copia-e-cola
 // =============================================
-router.post('/criar-preferencia', auth, async (req, res) => {
+router.post('/pix', auth, async (req, res) => {
   try {
     const { meses } = req.body
     if (!meses || ![1, 3, 6, 12].includes(Number(meses))) {
@@ -50,53 +50,53 @@ router.post('/criar-preferencia', auth, async (req, res) => {
       status: 'pendente'
     })
 
-    // Criar preferência no Mercado Pago
-    const preference = new Preference(mpClient)
+    // Criar pagamento PIX direto no Mercado Pago
+    const payment = new Payment(mpClient)
+    const backUrl = process.env.BACKEND_URL || 'http://localhost:5000'
 
-    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173'
-    const backUrl = process.env.BACKEND_URL || 'http://localhost:5005'
-
-    const preferenceData = await preference.create({
+    const mpPayment = await payment.create({
       body: {
-        items: [
-          {
-            id: pagamento._id.toString(),
-            title: `Plano ${config.pago.nome} - ${meses} ${Number(meses) === 1 ? 'mês' : 'meses'}`,
-            description: `Assinatura do plano ${config.pago.nome} por ${meses} ${Number(meses) === 1 ? 'mês' : 'meses'}`,
-            quantity: 1,
-            unit_price: valorTotal,
-            currency_id: 'BRL'
-          }
-        ],
+        transaction_amount: valorTotal,
+        description: `Plano ${config.pago.nome} - ${meses} ${Number(meses) === 1 ? 'mês' : 'meses'}`,
+        payment_method_id: 'pix',
         payer: {
-          name: user.nome,
-          email: user.email
+          email: user.email,
+          first_name: user.nome.split(' ')[0],
+          last_name: user.nome.split(' ').slice(1).join(' ') || user.nome
         },
-        back_urls: {
-          success: `${baseUrl}/upgrade-plano?status=sucesso&pagamento=${pagamento._id}`,
-          failure: `${baseUrl}/upgrade-plano?status=erro&pagamento=${pagamento._id}`,
-          pending: `${baseUrl}/upgrade-plano?status=pendente&pagamento=${pagamento._id}`
-        },
-        auto_return: 'approved',
         external_reference: pagamento._id.toString(),
         notification_url: `${backUrl}/api/pagamento/webhook`,
         statement_descriptor: 'KALLIL PDV'
       }
     })
 
-    // Salvar ID da preferência
-    pagamento.mpPreferenceId = preferenceData.id
+    // Salvar dados do MP
+    pagamento.mpPaymentId = String(mpPayment.id)
+    pagamento.metodoPagamento = 'pix'
+    pagamento.detalhes = {
+      statusDetail: mpPayment.status_detail,
+      paymentType: mpPayment.payment_type_id,
+      transactionAmount: mpPayment.transaction_amount
+    }
     await pagamento.save()
 
+    // Extrair dados do PIX
+    const pixInfo = mpPayment.point_of_interaction?.transaction_data
+    if (!pixInfo) {
+      return res.status(500).json({ message: 'Erro ao gerar PIX. Tente novamente.' })
+    }
+
     res.json({
-      preferenceId: preferenceData.id,
-      initPoint: preferenceData.init_point,
-      sandboxInitPoint: preferenceData.sandbox_init_point,
-      pagamentoId: pagamento._id
+      pagamentoId: pagamento._id,
+      qrCode: pixInfo.qr_code,           // código copia-e-cola
+      qrCodeBase64: pixInfo.qr_code_base64, // imagem base64 do QR
+      ticketUrl: pixInfo.ticket_url,
+      valorTotal,
+      expiracao: mpPayment.date_of_expiration
     })
   } catch (error) {
-    console.error('Erro ao criar preferência MP:', error)
-    res.status(500).json({ message: 'Erro ao iniciar pagamento.' })
+    console.error('Erro ao criar PIX:', error)
+    res.status(500).json({ message: 'Erro ao gerar pagamento PIX.' })
   }
 })
 
@@ -116,7 +116,6 @@ router.post('/webhook', async (req, res) => {
     }
   } catch (error) {
     console.error('Erro no webhook MP:', error)
-    // Já respondemos 200 acima
   }
 })
 
@@ -138,7 +137,16 @@ router.get('/status/:pagamentoId', auth, async (req, res) => {
     // Se ainda pendente, consultar no MP diretamente
     if (pagamento.status === 'pendente' && pagamento.mpPaymentId) {
       await processarPagamento(pagamento.mpPaymentId)
-      await pagamento.reload()
+      // Recarregar do banco
+      const atualizado = await Pagamento.findById(pagamento._id)
+      return res.json({
+        id: atualizado._id,
+        status: atualizado.status,
+        valorTotal: atualizado.valorTotal,
+        meses: atualizado.meses,
+        metodoPagamento: atualizado.metodoPagamento,
+        createdAt: atualizado.createdAt
+      })
     }
 
     res.json({
