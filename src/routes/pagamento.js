@@ -18,9 +18,13 @@ const mpClient = new MercadoPagoConfig({
 // =============================================
 router.post('/pix', auth, async (req, res) => {
   try {
-    const { meses } = req.body
+    const { meses, cpf } = req.body
     if (!meses || ![1, 3, 6, 12].includes(Number(meses))) {
       return res.status(400).json({ message: 'Período inválido. Escolha 1, 3, 6 ou 12 meses.' })
+    }
+    const cpfLimpo = (cpf || '').replace(/\D/g, '')
+    if (cpfLimpo.length !== 11) {
+      return res.status(400).json({ message: 'CPF inválido.' })
     }
 
     const user = await User.findById(req.userId)
@@ -62,7 +66,11 @@ router.post('/pix', auth, async (req, res) => {
         payer: {
           email: user.email,
           first_name: user.nome.split(' ')[0],
-          last_name: user.nome.split(' ').slice(1).join(' ') || user.nome
+          last_name: user.nome.split(' ').slice(1).join(' ') || user.nome,
+          identification: {
+            type: 'CPF',
+            number: cpfLimpo
+          }
         },
         external_reference: pagamento._id.toString(),
         notification_url: `${backUrl}/api/pagamento/webhook`,

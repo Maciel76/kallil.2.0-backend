@@ -21,6 +21,10 @@ connectDB().then(async () => {
     if (!existe) {
       await User.create({ nome: 'Administrador', email: adminEmail, senha: adminPass, role: 'admin' })
       console.log(`🔑 Admin criado: ${adminEmail}`)
+    } else {
+      // Atualizar senha se mudou no .env
+      existe.senha = adminPass
+      await existe.save()
     }
   } catch (err) {
     console.error('Erro ao verificar admin:', err.message)
