@@ -90,7 +90,13 @@ router.post('/pix', auth, async (req, res) => {
 
     // Extrair dados do PIX
     const pixInfo = mpPayment.point_of_interaction?.transaction_data
-    if (!pixInfo) {
+    if (!pixInfo || !pixInfo.qr_code) {
+      // Pagamento rejeitado pelo MP (ex: high risk)
+      if (mpPayment.status === 'rejected') {
+        pagamento.status = 'rejeitado'
+        await pagamento.save()
+        return res.status(400).json({ message: 'Pagamento rejeitado pelo Mercado Pago. Tente com outro e-mail ou dados.' })
+      }
       return res.status(500).json({ message: 'Erro ao gerar PIX. Tente novamente.' })
     }
 
@@ -103,8 +109,10 @@ router.post('/pix', auth, async (req, res) => {
       expiracao: mpPayment.date_of_expiration
     })
   } catch (error) {
-    console.error('Erro ao criar PIX:', error)
-    res.status(500).json({ message: 'Erro ao gerar pagamento PIX.' })
+    console.error('Erro ao criar PIX:', error?.message || error)
+    if (error?.cause) console.error('Causa MP:', JSON.stringify(error.cause, null, 2))
+    const mpMsg = error?.cause?.message || error?.message || ''
+    res.status(500).json({ message: 'Erro ao gerar pagamento PIX.', detalhe: mpMsg })
   }
 })
 
