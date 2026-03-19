@@ -6,11 +6,26 @@ const connectDB = require('./src/config/database')
 
 const app = express()
 
-// Conectar banco
-connectDB()
-
-// Registrar models necessários
-require('./src/models/PlanoConfig')
+// Conectar banco e criar admin padrão
+connectDB().then(async () => {
+  try {
+    const User = require('./src/models/User')
+    require('./src/models/PlanoConfig')
+    const adminEmail = process.env.ADMIN_EMAIL || 'admin@kallil.com'
+    const adminPass = process.env.ADMIN_PASS
+    if (!adminPass) {
+      console.warn('⚠️  ADMIN_PASS não definida no .env — admin não será criado')
+      return
+    }
+    const existe = await User.findOne({ email: adminEmail })
+    if (!existe) {
+      await User.create({ nome: 'Administrador', email: adminEmail, senha: adminPass, role: 'admin' })
+      console.log(`🔑 Admin criado: ${adminEmail}`)
+    }
+  } catch (err) {
+    console.error('Erro ao verificar admin:', err.message)
+  }
+})
 
 // CORS - suporta múltiplas origens via CORS_ORIGINS
 const allowedOrigins = process.env.CORS_ORIGINS
