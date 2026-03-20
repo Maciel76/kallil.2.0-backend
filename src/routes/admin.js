@@ -2,6 +2,7 @@ const express = require('express')
 const router = express.Router()
 const jwt = require('jsonwebtoken')
 const User = require('../models/User')
+const SuporteTicket = require('../models/SuporteTicket')
 const Venda = require('../models/Venda')
 const Produto = require('../models/Produto')
 const auth = require('../middleware/auth')
@@ -12,6 +13,8 @@ const gerarToken = (id) => {
     expiresIn: process.env.JWT_EXPIRES_IN || '7d'
   })
 }
+
+const escapeRegex = (value = '') => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 // POST /api/admin/login — login exclusivo para admin
 router.post('/login', async (req, res) => {
@@ -142,6 +145,114 @@ router.patch('/usuarios/:id/toggle', async (req, res) => {
     res.json({ ativo: user.ativo })
   } catch (error) {
     res.status(500).json({ message: 'Erro ao alterar status.' })
+  }
+})
+
+router.get('/suporte', async (req, res) => {
+  try {
+    const { busca, status } = req.query
+    const filtro = {}
+
+    if (status && ['aberto', 'respondido', 'fechado'].includes(status)) {
+      filtro.status = status
+    }
+
+    if (busca) {
+      const texto = escapeRegex(busca)
+      filtro.$or = [
+        { assunto: { $regex: texto, $options: 'i' } },
+        { nomeNegocio: { $regex: texto, $options: 'i' } },
+        { userNome: { $regex: texto, $options: 'i' } },
+        { userEmail: { $regex: texto, $options: 'i' } }
+      ]
+    }
+
+    const tickets = await SuporteTicket.find(filtro)
+      .sort({ ultimaMensagemEm: -1 })
+      .lean()
+
+    res.json(tickets.map(ticket => ({
+      id: ticket._id,
+      assunto: ticket.assunto,
+      status: ticket.status,
+      userNome: ticket.userNome,
+      userEmail: ticket.userEmail,
+      nomeNegocio: ticket.nomeNegocio,
+      naoLidasAdmin: ticket.naoLidasAdmin,
+      naoLidasUsuario: ticket.naoLidasUsuario,
+      ultimaMensagemEm: ticket.ultimaMensagemEm,
+      ultimaMensagemTexto: ticket.mensagens?.[ticket.mensagens.length - 1]?.texto || ''
+    })))
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao carregar mensagens de suporte.' })
+  }
+})
+
+router.get('/suporte/:id', async (req, res) => {
+  try {
+    const ticket = await SuporteTicket.findById(req.params.id).lean()
+    if (!ticket) {
+      return res.status(404).json({ message: 'Conversa não encontrada.' })
+    }
+
+    await SuporteTicket.updateOne({ _id: req.params.id }, { $set: { naoLidasAdmin: 0 } })
+
+    res.json({ ...ticket, naoLidasAdmin: 0 })
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao carregar conversa de suporte.' })
+  }
+})
+
+router.post('/suporte/:id/responder', async (req, res) => {
+  try {
+    const mensagem = (req.body.mensagem || '').trim().replace(/\s+/g, ' ')
+    if (mensagem.length < 2) {
+      return res.status(400).json({ message: 'Digite uma resposta válida.' })
+    }
+
+    const ticket = await SuporteTicket.findById(req.params.id)
+    if (!ticket) {
+      return res.status(404).json({ message: 'Conversa não encontrada.' })
+    }
+
+    const admin = await User.findById(req.userId).select('nome')
+
+    ticket.status = 'respondido'
+    ticket.naoLidasUsuario += 1
+    ticket.naoLidasAdmin = 0
+    ticket.ultimaMensagemEm = new Date()
+    ticket.mensagens.push({
+      autorTipo: 'admin',
+      autorNome: admin?.nome || 'Admin',
+      texto: mensagem
+    })
+
+    await ticket.save()
+
+    res.json(ticket)
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao responder conversa.' })
+  }
+})
+
+router.patch('/suporte/:id/status', async (req, res) => {
+  try {
+    const { status } = req.body
+    if (!['aberto', 'respondido', 'fechado'].includes(status)) {
+      return res.status(400).json({ message: 'Status inválido.' })
+    }
+
+    const ticket = await SuporteTicket.findById(req.params.id)
+    if (!ticket) {
+      return res.status(404).json({ message: 'Conversa não encontrada.' })
+    }
+
+    ticket.status = status
+    await ticket.save()
+
+    res.json({ status: ticket.status })
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao atualizar status da conversa.' })
   }
 })
 
