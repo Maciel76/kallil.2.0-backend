@@ -18,8 +18,22 @@ const despesaSchema = new mongoose.Schema({
   },
   categoria: {
     type: String,
-    enum: ['Aluguel', 'Fornecedor', 'Energia', 'Transporte', 'Marketing', 'Outros'],
+    enum: ['Aluguel', 'Fornecedor', 'Energia', 'Transporte', 'Marketing', 'Assinatura', 'Outros'],
     default: 'Outros'
+  },
+  fixa: {
+    type: Boolean,
+    default: false
+  },
+  origem: {
+    type: String,
+    enum: ['manual', 'assinatura'],
+    default: 'manual'
+  },
+  recorrencia: {
+    type: String,
+    enum: ['nenhuma', 'mensal'],
+    default: 'nenhuma'
   },
   data: {
     type: Date,

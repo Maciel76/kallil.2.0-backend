@@ -13,25 +13,38 @@ const gerarToken = (id) => {
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
   try {
-    const { nome, nomeNegocio, email, senha } = req.body
+    const { nome, nomeNegocio, email, senha, cpf } = req.body
 
-    if (!nome || !nomeNegocio || !email || !senha) {
+    if (!nome || !nomeNegocio || !email || !senha || !cpf) {
       return res.status(400).json({ message: 'Todos os campos são obrigatórios.' })
     }
 
+    // Validar formato CPF
+    const cpfLimpo = cpf.replace(/\D/g, '')
+    if (cpfLimpo.length !== 11) {
+      return res.status(400).json({ message: 'CPF inválido.' })
+    }
+
+    // Verificar duplicidade de e-mail
     const existe = await User.findOne({ email })
     if (existe) {
       return res.status(400).json({ message: 'E-mail já cadastrado.' })
     }
 
-    const user = await User.create({ nome, nomeNegocio, email, senha })
+    // Verificar duplicidade de CPF
+    const cpfExiste = await User.findOne({ cpf: cpfLimpo })
+    if (cpfExiste) {
+      return res.status(400).json({ message: 'CPF já cadastrado.' })
+    }
+
+    const user = await User.create({ nome, nomeNegocio, email, senha, cpf: cpfLimpo })
     const token = gerarToken(user._id)
 
     res.status(201).json({
       token,
       user: {
         id: user._id, nome: user.nome, nomeNegocio: user.nomeNegocio,
-        email: user.email, role: user.role, cnpj: user.cnpj, endereco: user.endereco,
+        email: user.email, role: user.role, cpf: user.cpf, cnpj: user.cnpj, endereco: user.endereco,
         cidade: user.cidade, estado: user.estado, taxaPrazo: user.taxaPrazo,
         logoUrl: user.logoUrl, pdvCores: user.pdvCores,
         plano: user.plano, assinaturaStatus: user.assinaturaStatus,

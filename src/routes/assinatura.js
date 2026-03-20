@@ -4,6 +4,7 @@ const User = require('../models/User')
 const PlanoConfig = require('../models/PlanoConfig')
 const auth = require('../middleware/auth')
 const { authorize } = require('../middleware/auth')
+const { sincronizarDespesaAssinatura, removerDespesaAssinatura } = require('../utils/assinaturaDespesa')
 
 // =======================================
 // ROTAS PÚBLICAS (usuário autenticado)
@@ -27,6 +28,7 @@ router.get('/meu-plano', auth, async (req, res) => {
       user.assinaturaStatus = 'expirado'
       user.plano = 'gratuito'
       await user.save()
+      await removerDespesaAssinatura(user._id)
     }
 
     const limites = user.plano === 'pago' && user.assinaturaStatus === 'ativo'
@@ -211,6 +213,18 @@ router.patch('/admin/usuarios/:id', auth, authorize('admin'), async (req, res) =
     }
 
     await user.save()
+
+    if (plano === 'pago') {
+      const config = await PlanoConfig.getConfig()
+      await sincronizarDespesaAssinatura(user._id, {
+        nomePlano: config.pago.nome,
+        valorMensal: config.pago.valorMensal,
+        dataReferencia: new Date()
+      })
+    } else {
+      await removerDespesaAssinatura(user._id)
+    }
+
     res.json({
       id: user._id,
       plano: user.plano,
@@ -245,6 +259,14 @@ router.patch('/admin/usuarios/:id/renovar', auth, authorize('admin'), async (req
     user.assinaturaExpira = new Date(base.getTime() + duracao * 30 * 24 * 60 * 60 * 1000)
 
     await user.save()
+
+    const config = await PlanoConfig.getConfig()
+    await sincronizarDespesaAssinatura(user._id, {
+      nomePlano: config.pago.nome,
+      valorMensal: config.pago.valorMensal,
+      dataReferencia: new Date()
+    })
+
     res.json({
       id: user._id,
       plano: user.plano,

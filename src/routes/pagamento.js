@@ -5,6 +5,7 @@ const User = require('../models/User')
 const Pagamento = require('../models/Pagamento')
 const PlanoConfig = require('../models/PlanoConfig')
 const auth = require('../middleware/auth')
+const { sincronizarDespesaAssinatura } = require('../utils/assinaturaDespesa')
 
 // Inicializar Mercado Pago
 const mpClient = new MercadoPagoConfig({
@@ -258,6 +259,14 @@ async function ativarPlano(userId, meses) {
   if (!user.assinaturaInicio) user.assinaturaInicio = new Date()
   user.assinaturaExpira = new Date(base.getTime() + meses * 30 * 24 * 60 * 60 * 1000)
   await user.save()
+
+  // Manter a cobrança mensal de assinatura como despesa fixa do negócio
+  const config = await PlanoConfig.getConfig()
+  await sincronizarDespesaAssinatura(userId, {
+    nomePlano: config.pago.nome,
+    valorMensal: config.pago.valorMensal,
+    dataReferencia: new Date()
+  })
 }
 
 module.exports = router

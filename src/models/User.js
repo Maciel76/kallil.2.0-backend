@@ -12,6 +12,30 @@ const userSchema = new mongoose.Schema({
     trim: true,
     default: ''
   },
+  cpf: {
+    type: String,
+    trim: true,
+    default: '',
+    validate: {
+      validator: function(v) {
+        if (!v) return true
+        const limpo = v.replace(/\D/g, '')
+        if (limpo.length !== 11) return false
+        if (/^(\d)\1{10}$/.test(limpo)) return false
+        let soma = 0
+        for (let i = 0; i < 9; i++) soma += parseInt(limpo[i]) * (10 - i)
+        let resto = (soma * 10) % 11
+        if (resto === 10) resto = 0
+        if (resto !== parseInt(limpo[9])) return false
+        soma = 0
+        for (let i = 0; i < 10; i++) soma += parseInt(limpo[i]) * (11 - i)
+        resto = (soma * 10) % 11
+        if (resto === 10) resto = 0
+        return resto === parseInt(limpo[10])
+      },
+      message: 'CPF inválido'
+    }
+  },
   cnpj: {
     type: String,
     trim: true,

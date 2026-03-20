@@ -32,7 +32,17 @@ router.post('/', async (req, res) => {
     if (!descricao || !valor) {
       return res.status(400).json({ message: 'Descrição e valor são obrigatórios.' })
     }
-    const despesa = await Despesa.create({ userId: req.userId, descricao, valor, categoria, data })
+    const ehAssinatura = categoria === 'Assinatura'
+    const despesa = await Despesa.create({
+      userId: req.userId,
+      descricao,
+      valor,
+      categoria,
+      data,
+      fixa: ehAssinatura,
+      origem: 'manual',
+      recorrencia: ehAssinatura ? 'mensal' : 'nenhuma'
+    })
     res.status(201).json(despesa)
   } catch (error) {
     res.status(500).json({ message: 'Erro ao criar despesa.' })
@@ -42,8 +52,10 @@ router.post('/', async (req, res) => {
 // DELETE /api/despesas/:id
 router.delete('/:id', async (req, res) => {
   try {
-    const despesa = await Despesa.findOneAndDelete({ _id: req.params.id, userId: req.userId })
+    const despesa = await Despesa.findOne({ _id: req.params.id, userId: req.userId })
     if (!despesa) return res.status(404).json({ message: 'Despesa não encontrada.' })
+    if (despesa.fixa) return res.status(400).json({ message: 'Despesas fixas não podem ser removidas.' })
+    await despesa.deleteOne()
     res.json({ message: 'Despesa removida com sucesso.' })
   } catch (error) {
     res.status(500).json({ message: 'Erro ao remover despesa.' })

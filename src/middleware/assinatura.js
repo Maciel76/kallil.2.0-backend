@@ -4,6 +4,7 @@ const Produto = require('../models/Produto')
 const Venda = require('../models/Venda')
 const Cliente = require('../models/Cliente')
 const Caixa = require('../models/Caixa')
+const { removerDespesaAssinatura } = require('../utils/assinaturaDespesa')
 
 // Middleware que verifica se a assinatura está ativa
 const verificarAssinatura = async (req, res, next) => {
@@ -25,6 +26,7 @@ const verificarAssinatura = async (req, res, next) => {
         dono.assinaturaStatus = 'expirado'
         dono.plano = 'gratuito'
         await dono.save()
+        await removerDespesaAssinatura(dono._id)
       } else {
         req.planoAtual = 'pago'
         req.assinaturaStatus = 'ativo'
