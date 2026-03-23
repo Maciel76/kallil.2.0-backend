@@ -13,10 +13,16 @@ router.use(verificarAssinatura)
 // POST /api/vendas — finalizar venda
 router.post('/', verificarLimite('vendas'), async (req, res) => {
   try {
-    const { itens, desconto = 0, descontoTipo = 'valor', formaPagamento, clienteId, clienteNome, valorRecebido = 0, dataVencimento, observacoes, caixaId } = req.body
+    const { itens, desconto = 0, descontoTipo = 'valor', formaPagamento, clienteId, clienteNome, clienteCpf, valorRecebido = 0, dataVencimento, observacoes, caixaId } = req.body
 
     if (!itens || itens.length === 0) {
       return res.status(400).json({ message: 'A venda deve ter ao menos um item.' })
+    }
+
+    // Validar fiado: CPF e data de vencimento obrigatórios
+    if (formaPagamento === 'fiado') {
+      if (!clienteId) return res.status(400).json({ message: 'Cliente é obrigatório para venda fiado.' })
+      if (!dataVencimento) return res.status(400).json({ message: 'Data de vencimento é obrigatória para venda fiado.' })
     }
 
     // Calcular totais e dar baixa no estoque
@@ -76,6 +82,7 @@ router.post('/', verificarLimite('vendas'), async (req, res) => {
       status,
       clienteId: clienteId || null,
       clienteNome: clienteNome || '',
+      clienteCpf: clienteCpf || '',
       dataVencimento: formaPagamento === 'fiado' && dataVencimento ? new Date(dataVencimento) : null,
       observacoes: observacoes || '',
       caixaId: caixaId || null

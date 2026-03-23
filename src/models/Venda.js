@@ -68,9 +68,27 @@ const vendaSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  clienteCpf: {
+    type: String,
+    default: ''
+  },
+  valorPago: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
   dataVencimento: {
     type: Date,
     default: null
+  },
+  dataPagamento: {
+    type: Date,
+    default: null
+  },
+  formaPagamentoRecebimento: {
+    type: String,
+    enum: ['dinheiro', 'pix', 'debito', 'credito', ''],
+    default: ''
   },
   observacoes: {
     type: String,
