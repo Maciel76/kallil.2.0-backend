@@ -2,7 +2,12 @@ const jwt = require('jsonwebtoken')
 const User = require('../models/User')
 
 const auth = async (req, res, next) => {
-  const token = req.header('Authorization')?.replace('Bearer ', '')
+  let token = req.header('Authorization')?.replace('Bearer ', '')
+
+  // Fallback: token via query string (necessário para SSE/EventSource)
+  if (!token && req.query.token) {
+    token = req.query.token
+  }
 
   if (!token) {
     return res.status(401).json({ message: 'Acesso negado. Token não fornecido.' })

@@ -4,6 +4,7 @@ const auth = require('../middleware/auth')
 const { authorize } = require('../middleware/auth')
 const User = require('../models/User')
 const SuporteTicket = require('../models/SuporteTicket')
+const { notifySupportMessage } = require('../services/whatsappNotifications')
 
 router.use(auth)
 router.use(authorize('dono'))
@@ -67,6 +68,22 @@ router.post('/conversas', async (req, res) => {
       ]
     })
 
+    // Notifica admin via WhatsApp sobre nova mensagem de suporte
+    try {
+      const whatsappRoutes = require('./whatsapp')
+      const getActiveSessions = whatsappRoutes.getActiveSessions
+      notifySupportMessage({
+        nome: usuario.nome,
+        email: usuario.email,
+        nomeNegocio: usuario.nomeNegocio,
+        assunto,
+        mensagem,
+        ticketId: ticket._id
+      }, getActiveSessions)
+    } catch (e) {
+      console.error('[WA-Notify] Erro ao notificar mensagem de suporte:', e.message)
+    }
+
     res.status(201).json(ticket)
   } catch (error) {
     res.status(500).json({ message: 'Erro ao abrir conversa com o suporte.' })
@@ -104,6 +121,22 @@ router.post('/conversas/:id/mensagens', async (req, res) => {
     })
 
     await ticket.save()
+
+    // Notifica admin via WhatsApp sobre nova mensagem de suporte
+    try {
+      const whatsappRoutes = require('./whatsapp')
+      const getActiveSessions = whatsappRoutes.getActiveSessions
+      notifySupportMessage({
+        nome: usuario.nome,
+        email: usuario.email,
+        nomeNegocio: usuario.nomeNegocio,
+        assunto: ticket.assunto,
+        mensagem,
+        ticketId: ticket._id
+      }, getActiveSessions)
+    } catch (e) {
+      console.error('[WA-Notify] Erro ao notificar mensagem de suporte:', e.message)
+    }
 
     res.json(ticket)
   } catch (error) {

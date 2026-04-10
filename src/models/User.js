@@ -79,6 +79,19 @@ const userSchema = new mongoose.Schema({
     lowercase: true,
     trim: true
   },
+  telefone: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  resetCode: {
+    type: String,
+    default: null
+  },
+  resetCodeExpira: {
+    type: Date,
+    default: null
+  },
   senha: {
     type: String,
     required: [true, 'Senha é obrigatória'],

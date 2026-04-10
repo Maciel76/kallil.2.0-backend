@@ -6,6 +6,7 @@ const Pagamento = require('../models/Pagamento')
 const PlanoConfig = require('../models/PlanoConfig')
 const auth = require('../middleware/auth')
 const { sincronizarDespesaAssinatura } = require('../utils/assinaturaDespesa')
+const { notifyPlanUpgrade } = require('../services/whatsappNotifications')
 
 // Inicializar Mercado Pago
 const mpClient = new MercadoPagoConfig({
@@ -267,6 +268,21 @@ async function ativarPlano(userId, meses) {
     valorMensal: config.pago.valorMensal,
     dataReferencia: new Date()
   })
+
+  // Notifica admin via WhatsApp sobre upgrade de plano
+  try {
+    const whatsappRoutes = require('./whatsapp')
+    const getActiveSessions = whatsappRoutes.getActiveSessions
+    notifyPlanUpgrade({
+      nome: user.nome,
+      email: user.email,
+      nomeNegocio: user.nomeNegocio,
+      meses,
+      assinaturaExpira: user.assinaturaExpira
+    }, getActiveSessions)
+  } catch (e) {
+    console.error('[WA-Notify] Erro ao notificar upgrade de plano:', e.message)
+  }
 }
 
 module.exports = router

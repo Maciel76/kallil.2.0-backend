@@ -5,6 +5,7 @@ const PlanoConfig = require('../models/PlanoConfig')
 const auth = require('../middleware/auth')
 const { authorize } = require('../middleware/auth')
 const { sincronizarDespesaAssinatura, removerDespesaAssinatura } = require('../utils/assinaturaDespesa')
+const { notifyPlanUpgrade, notifyPlanRenewal } = require('../services/whatsappNotifications')
 
 // =======================================
 // ROTAS PÚBLICAS (usuário autenticado)
@@ -232,6 +233,23 @@ router.patch('/admin/usuarios/:id', auth, authorize('admin'), async (req, res) =
       assinaturaInicio: user.assinaturaInicio,
       assinaturaExpira: user.assinaturaExpira
     })
+
+    // Notifica admin via WhatsApp sobre alteração de plano
+    if (plano === 'pago') {
+      try {
+        const whatsappRoutes = require('./whatsapp')
+        const getActiveSessions = whatsappRoutes.getActiveSessions
+        notifyPlanUpgrade({
+          nome: user.nome,
+          email: user.email,
+          nomeNegocio: user.nomeNegocio,
+          meses: parseInt(meses) || 1,
+          assinaturaExpira: user.assinaturaExpira
+        }, getActiveSessions)
+      } catch (e) {
+        console.error('[WA-Notify] Erro ao notificar upgrade de plano:', e.message)
+      }
+    }
   } catch (error) {
     res.status(500).json({ message: 'Erro ao atualizar assinatura.' })
   }
@@ -274,6 +292,21 @@ router.patch('/admin/usuarios/:id/renovar', auth, authorize('admin'), async (req
       assinaturaInicio: user.assinaturaInicio,
       assinaturaExpira: user.assinaturaExpira
     })
+
+    // Notifica admin via WhatsApp sobre renovação de plano
+    try {
+      const whatsappRoutes = require('./whatsapp')
+      const getActiveSessions = whatsappRoutes.getActiveSessions
+      notifyPlanRenewal({
+        nome: user.nome,
+        email: user.email,
+        nomeNegocio: user.nomeNegocio,
+        meses: duracao,
+        assinaturaExpira: user.assinaturaExpira
+      }, getActiveSessions)
+    } catch (e) {
+      console.error('[WA-Notify] Erro ao notificar renovação de plano:', e.message)
+    }
   } catch (error) {
     res.status(500).json({ message: 'Erro ao renovar assinatura.' })
   }

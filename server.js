@@ -29,6 +29,31 @@ connectDB().then(async () => {
   } catch (err) {
     console.error('Erro ao verificar admin:', err.message)
   }
+
+  // Reconectar instâncias WhatsApp ativas
+  try {
+    const WhatsAppInstance = require('./src/models/WhatsAppInstance')
+    const WhatsAppService = require('./src/services/whatsappService')
+    const whatsappRoutes = require('./src/routes/whatsapp')
+    const activeInstances = await WhatsAppInstance.find({ status: { $in: ['connected', 'connecting'] } })
+
+    if (activeInstances.length > 0) {
+      console.log(`📱 Reconectando ${activeInstances.length} instância(s) WhatsApp...`)
+    }
+
+    for (const instance of activeInstances) {
+      const sessionKey = instance._id.toString()
+      const whatsapp = new WhatsAppService(instance)
+      const sessions = whatsappRoutes.getActiveSessions()
+      sessions.set(sessionKey, whatsapp)
+
+      whatsapp.initialize().catch(err => {
+        console.error(`[WA-PDV] Erro ao reconectar ${instance._id}:`, err.message)
+      })
+    }
+  } catch (err) {
+    console.error('Erro ao restaurar sessões WhatsApp:', err.message)
+  }
 })
 
 // CORS - suporta múltiplas origens via CORS_ORIGINS
@@ -63,6 +88,7 @@ app.use('/api/relatorios', require('./src/routes/relatorios'))
 app.use('/api/cupom', require('./src/routes/cupom'))
 app.use('/api/pagamento', require('./src/routes/pagamento'))
 app.use('/api/suporte', require('./src/routes/suporte'))
+app.use('/api/whatsapp', require('./src/routes/whatsapp'))
 
 // Rota de saúde
 app.get('/api/health', (req, res) => {
