@@ -173,6 +173,18 @@ class WhatsAppService extends EventEmitter {
 
       this.socket.ev.on('creds.update', saveCreds)
 
+      // Listener de mensagens recebidas — dispara workflow engine
+      this.socket.ev.on('messages.upsert', async ({ messages, type }) => {
+        if (type !== 'notify') return
+        for (const msg of messages) {
+          try {
+            await this._handleIncomingMessage(msg)
+          } catch (err) {
+            console.error('[WA-PDV] Erro processando msg recebida:', err.message)
+          }
+        }
+      })
+
       return true
     } catch (error) {
       this._initializing = false
@@ -247,6 +259,69 @@ class WhatsAppService extends EventEmitter {
     const jid = await this._resolveJidVerified(numberOrJid)
     await this.socket.sendMessage(jid, { text })
     console.log(`[WA-PDV] Mensagem enviada para ${jid}`)
+  }
+
+  // Envia simulando comportamento humano (delay opcional). Aceita JID direto.
+  async sendMessageHuman(jidOrNumber, text, _msgKey, delay = 0) {
+    if (!this.socket || !this.connected) {
+      throw new Error('WhatsApp não está conectado')
+    }
+    if (delay && delay > 0) {
+      await new Promise(r => setTimeout(r, Math.min(delay, 8000)))
+    }
+    const jid = jidOrNumber.includes('@') ? jidOrNumber : await this._resolveJidVerified(jidOrNumber)
+    await this.socket.sendMessage(jid, { text })
+  }
+
+  // Stubs — Baileys suporta, mas implementação completa fica para evolução.
+  async sendMedia(_jid, _type, _url, _caption, _msgKey, _delay) {
+    throw new Error('sendMedia não implementado — fluxo recairá em texto')
+  }
+
+  async sendListMessage(_jid, _text, _btn, _sections, _footer, _title, _msgKey, _delay) {
+    throw new Error('sendListMessage não implementado — fluxo recairá em texto')
+  }
+
+  async _handleIncomingMessage(msg) {
+    if (!msg || !msg.message || msg.key.fromMe) return
+    const jid = msg.key.remoteJid
+    if (!this._isPrivateChat(jid)) return // ignora grupos
+
+    // Extrai texto da mensagem (vários formatos possíveis)
+    let text = ''
+    const m = msg.message
+    if (m.conversation) text = m.conversation
+    else if (m.extendedTextMessage?.text) text = m.extendedTextMessage.text
+    else if (m.imageMessage?.caption) text = m.imageMessage.caption
+    else if (m.videoMessage?.caption) text = m.videoMessage.caption
+    else if (m.buttonsResponseMessage?.selectedDisplayText)
+      text = m.buttonsResponseMessage.selectedDisplayText
+    else if (m.listResponseMessage?.title) text = m.listResponseMessage.title
+    else if (m.listResponseMessage?.singleSelectReply?.selectedRowId)
+      text = m.listResponseMessage.singleSelectReply.selectedRowId
+
+    if (!text) return // sem texto não há o que processar
+
+    const number = this._extractNumber(jid)
+    const pushName = msg.pushName || number
+
+    // Importação tardia para evitar ciclos
+    const WorkflowEngine = require('./workflowEngine')
+
+    try {
+      await WorkflowEngine.processMessage({
+        instanceId: this.instance._id,
+        jid,
+        number,
+        message: text,
+        pushName,
+        isNewContact: false,
+        msgKey: msg.key,
+        whatsapp: this
+      })
+    } catch (err) {
+      console.error('[WA-PDV] Workflow engine falhou:', err.message)
+    }
   }
 
   async disconnect() {

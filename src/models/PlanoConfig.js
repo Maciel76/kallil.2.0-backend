@@ -25,6 +25,12 @@ const planoConfigSchema = new mongoose.Schema({
     maxClientes: { type: Number, default: 0 },        // 0 = ilimitado
     suportePrioritario: { type: Boolean, default: true }
   },
+  // Add-on: Automação WhatsApp (cobrado separadamente)
+  whatsapp: {
+    nome: { type: String, default: 'Automação WhatsApp' },
+    valorMensal: { type: Number, default: 89.90 },
+    ativo: { type: Boolean, default: true }
+  },
   // Dias de teste grátis para novos usuários
   diasTeste: { type: Number, default: 7 }
 }, { timestamps: true })

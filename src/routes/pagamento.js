@@ -20,7 +20,8 @@ const mpClient = new MercadoPagoConfig({
 // =============================================
 router.post('/pix', auth, async (req, res) => {
   try {
-    const { meses, cpf } = req.body
+    const { meses, cpf, tipo } = req.body
+    const tipoPlano = tipo === 'whatsapp' ? 'whatsapp' : 'pago'
     if (!meses || ![1, 3, 6, 12].includes(Number(meses))) {
       return res.status(400).json({ message: 'Período inválido. Escolha 1, 3, 6 ou 12 meses.' })
     }
@@ -34,13 +35,20 @@ router.post('/pix', auth, async (req, res) => {
       return res.status(403).json({ message: 'Apenas donos podem assinar planos.' })
     }
 
-    // Já tem plano pago ativo?
-    if (user.plano === 'pago' && user.assinaturaStatus === 'ativo' && user.assinaturaExpira > new Date()) {
-      return res.status(400).json({ message: 'Você já possui um plano ativo.' })
+    // Já tem plano ativo?
+    if (tipoPlano === 'pago') {
+      if (user.plano === 'pago' && user.assinaturaStatus === 'ativo' && user.assinaturaExpira > new Date()) {
+        return res.status(400).json({ message: 'Você já possui um plano ativo.' })
+      }
+    } else if (tipoPlano === 'whatsapp') {
+      if (user.planoWhatsapp && user.whatsappAssinaturaExpira && user.whatsappAssinaturaExpira > new Date()) {
+        return res.status(400).json({ message: 'Você já possui o add-on WhatsApp ativo.' })
+      }
     }
 
     const config = await PlanoConfig.getConfig()
-    const valorMensal = config.pago.valorMensal
+    const planoNome = tipoPlano === 'whatsapp' ? (config.whatsapp?.nome || 'Automação WhatsApp') : config.pago.nome
+    const valorMensal = tipoPlano === 'whatsapp' ? (config.whatsapp?.valorMensal || 89.90) : config.pago.valorMensal
 
     // Calcular valor com desconto
     const descontos = { 1: 0, 3: 0.05, 6: 0.10, 12: 0.20 }
@@ -50,7 +58,7 @@ router.post('/pix', auth, async (req, res) => {
     // Criar registro de pagamento local
     const pagamento = await Pagamento.create({
       userId: user._id,
-      plano: 'pago',
+      plano: tipoPlano,
       meses: Number(meses),
       valorTotal,
       status: 'pendente'
@@ -63,7 +71,7 @@ router.post('/pix', auth, async (req, res) => {
     const mpPayment = await payment.create({
       body: {
         transaction_amount: valorTotal,
-        description: `Plano ${config.pago.nome} - ${meses} ${Number(meses) === 1 ? 'mês' : 'meses'}`,
+        description: `Plano ${planoNome} - ${meses} ${Number(meses) === 1 ? 'mês' : 'meses'}`,
         payment_method_id: 'pix',
         payer: {
           email: user.email,
@@ -236,7 +244,11 @@ async function processarPagamento(mpPaymentId) {
 
     // Se aprovado, ativar plano do usuário
     if (mpData.status === 'approved') {
-      await ativarPlano(pagamento.userId, pagamento.meses)
+      if (pagamento.plano === 'whatsapp') {
+        await ativarPlanoWhatsapp(pagamento.userId, pagamento.meses)
+      } else {
+        await ativarPlano(pagamento.userId, pagamento.meses)
+      }
     }
   } catch (error) {
     console.error('Erro ao processar pagamento MP:', error)
@@ -283,6 +295,23 @@ async function ativarPlano(userId, meses) {
   } catch (e) {
     console.error('[WA-Notify] Erro ao notificar upgrade de plano:', e.message)
   }
+}
+
+// =============================================
+// Função auxiliar: ativar add-on WhatsApp
+// =============================================
+async function ativarPlanoWhatsapp(userId, meses) {
+  const user = await User.findById(userId)
+  if (!user) return
+
+  const base = user.whatsappAssinaturaExpira && user.whatsappAssinaturaExpira > new Date()
+    ? user.whatsappAssinaturaExpira
+    : new Date()
+
+  user.planoWhatsapp = true
+  if (!user.whatsappAssinaturaInicio) user.whatsappAssinaturaInicio = new Date()
+  user.whatsappAssinaturaExpira = new Date(base.getTime() + meses * 30 * 24 * 60 * 60 * 1000)
+  await user.save()
 }
 
 module.exports = router

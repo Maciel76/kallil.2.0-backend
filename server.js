@@ -35,6 +35,20 @@ connectDB().then(async () => {
     const WhatsAppInstance = require('./src/models/WhatsAppInstance')
     const WhatsAppService = require('./src/services/whatsappService')
     const whatsappRoutes = require('./src/routes/whatsapp')
+    const automacaoRoutes = require('./src/routes/automacao')
+    const automacaoNotifier = require('./src/services/automacaoNotifier')
+
+    // Provider de sessões para o notifier (junta admin + automacao)
+    automacaoNotifier.setActiveSessionsProvider(() => {
+      const merged = new Map()
+      const adm = whatsappRoutes.getActiveSessions ? whatsappRoutes.getActiveSessions() : new Map()
+      const aut = automacaoRoutes.getActiveSessions ? automacaoRoutes.getActiveSessions() : new Map()
+      adm.forEach((v, k) => merged.set(k, v))
+      aut.forEach((v, k) => merged.set(k, v))
+      return merged
+    })
+
+    const User = require('./src/models/User')
     const activeInstances = await WhatsAppInstance.find({ status: { $in: ['connected', 'connecting'] } })
 
     if (activeInstances.length > 0) {
@@ -42,15 +56,19 @@ connectDB().then(async () => {
     }
 
     for (const instance of activeInstances) {
+      const owner = await User.findById(instance.userId).lean()
+      const sessions = owner?.role === 'admin'
+        ? whatsappRoutes.getActiveSessions()
+        : automacaoRoutes.getActiveSessions()
       const sessionKey = instance._id.toString()
       const whatsapp = new WhatsAppService(instance)
-      const sessions = whatsappRoutes.getActiveSessions()
       sessions.set(sessionKey, whatsapp)
-
       whatsapp.initialize().catch(err => {
         console.error(`[WA-PDV] Erro ao reconectar ${instance._id}:`, err.message)
       })
     }
+
+    automacaoNotifier.startScheduler()
   } catch (err) {
     console.error('Erro ao restaurar sessões WhatsApp:', err.message)
   }
@@ -89,6 +107,7 @@ app.use('/api/cupom', require('./src/routes/cupom'))
 app.use('/api/pagamento', require('./src/routes/pagamento'))
 app.use('/api/suporte', require('./src/routes/suporte'))
 app.use('/api/whatsapp', require('./src/routes/whatsapp'))
+app.use('/api/automacao', require('./src/routes/automacao'))
 
 // Rota de saúde
 app.get('/api/health', (req, res) => {

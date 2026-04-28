@@ -18,7 +18,7 @@ const pagamentoSchema = new mongoose.Schema({
   // Dados do plano
   plano: {
     type: String,
-    enum: ['pago'],
+    enum: ['pago', 'whatsapp'],
     default: 'pago'
   },
   meses: {

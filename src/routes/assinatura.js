@@ -36,12 +36,21 @@ router.get('/meu-plano', auth, async (req, res) => {
       ? config.pago
       : (user.assinaturaStatus === 'teste' && user.testeExpira > agora ? config.pago : config.gratuito)
 
+    // Verifica e desativa plano whatsapp se expirado
+    if (user.planoWhatsapp && user.whatsappAssinaturaExpira && user.whatsappAssinaturaExpira < agora) {
+      user.planoWhatsapp = false
+      await user.save()
+    }
+
     res.json({
       plano: user.plano,
       status: user.assinaturaStatus,
       assinaturaInicio: user.assinaturaInicio,
       assinaturaExpira: user.assinaturaExpira,
       testeExpira: user.testeExpira,
+      planoWhatsapp: user.planoWhatsapp,
+      whatsappAssinaturaInicio: user.whatsappAssinaturaInicio,
+      whatsappAssinaturaExpira: user.whatsappAssinaturaExpira,
       limites: {
         maxProdutos: limites.maxProdutos,
         maxVendasMes: limites.maxVendasMes,
@@ -55,6 +64,11 @@ router.get('/meu-plano', auth, async (req, res) => {
       planoProf: {
         nome: config.pago.nome,
         valorMensal: config.pago.valorMensal
+      },
+      planoWhatsappInfo: {
+        nome: config.whatsapp?.nome || 'Automação WhatsApp',
+        valorMensal: config.whatsapp?.valorMensal || 89.90,
+        ativo: config.whatsapp?.ativo !== false
       }
     })
   } catch (error) {
@@ -80,7 +94,7 @@ router.get('/config', auth, authorize('admin'), async (req, res) => {
 router.put('/config', auth, authorize('admin'), async (req, res) => {
   try {
     const config = await PlanoConfig.getConfig()
-    const { gratuito, pago, diasTeste } = req.body
+    const { gratuito, pago, whatsapp, diasTeste } = req.body
 
     if (gratuito) {
       if (gratuito.maxProdutos !== undefined) config.gratuito.maxProdutos = gratuito.maxProdutos
@@ -107,6 +121,13 @@ router.put('/config', auth, authorize('admin'), async (req, res) => {
     }
 
     if (diasTeste !== undefined) config.diasTeste = diasTeste
+
+    if (whatsapp) {
+      if (!config.whatsapp) config.whatsapp = {}
+      if (whatsapp.nome !== undefined) config.whatsapp.nome = whatsapp.nome
+      if (whatsapp.valorMensal !== undefined) config.whatsapp.valorMensal = whatsapp.valorMensal
+      if (whatsapp.ativo !== undefined) config.whatsapp.ativo = whatsapp.ativo
+    }
 
     await config.save()
     res.json(config)
@@ -180,6 +201,8 @@ router.get('/admin/usuarios', auth, authorize('admin'), async (req, res) => {
       assinaturaInicio: u.assinaturaInicio,
       assinaturaExpira: u.assinaturaExpira,
       testeExpira: u.testeExpira,
+      planoWhatsapp: u.planoWhatsapp,
+      whatsappAssinaturaExpira: u.whatsappAssinaturaExpira,
       ativo: u.ativo,
       createdAt: u.createdAt
     }))
@@ -309,6 +332,43 @@ router.patch('/admin/usuarios/:id/renovar', auth, authorize('admin'), async (req
     }
   } catch (error) {
     res.status(500).json({ message: 'Erro ao renovar assinatura.' })
+  }
+})
+
+// PATCH /api/assinatura/admin/usuarios/:id/whatsapp — conceder/renovar/revogar add-on WhatsApp (admin)
+router.patch('/admin/usuarios/:id/whatsapp', auth, authorize('admin'), async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id)
+    if (!user || user.role !== 'dono') {
+      return res.status(404).json({ message: 'Usuário não encontrado.' })
+    }
+
+    const { acao, meses } = req.body  // acao: 'conceder' | 'revogar' | 'renovar'
+
+    if (acao === 'revogar') {
+      user.planoWhatsapp = false
+      user.whatsappAssinaturaExpira = null
+      user.whatsappAssinaturaInicio = null
+    } else {
+      const duracao = parseInt(meses) || 1
+      const base = (acao === 'renovar' && user.whatsappAssinaturaExpira && user.whatsappAssinaturaExpira > new Date())
+        ? user.whatsappAssinaturaExpira
+        : new Date()
+      user.planoWhatsapp = true
+      if (!user.whatsappAssinaturaInicio) user.whatsappAssinaturaInicio = new Date()
+      user.whatsappAssinaturaExpira = new Date(base.getTime() + duracao * 30 * 24 * 60 * 60 * 1000)
+    }
+
+    await user.save()
+
+    res.json({
+      id: user._id,
+      planoWhatsapp: user.planoWhatsapp,
+      whatsappAssinaturaInicio: user.whatsappAssinaturaInicio,
+      whatsappAssinaturaExpira: user.whatsappAssinaturaExpira
+    })
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao atualizar plano WhatsApp.' })
   }
 })
 

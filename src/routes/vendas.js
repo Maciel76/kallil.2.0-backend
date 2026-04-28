@@ -95,6 +95,18 @@ router.post('/', verificarLimite('vendas'), async (req, res) => {
       })
     }
 
+    // Disparar automações de WhatsApp do dono (sem bloquear o fluxo)
+    try {
+      const notifier = require('../services/automacaoNotifier')
+      if (status === 'fiado') {
+        notifier.enviarCobrancaFiado(req.userId, venda).catch(() => {})
+      } else {
+        notifier.enviarAgradecimentoVenda(req.userId, venda).catch(() => {})
+      }
+    } catch (e) {
+      /* notificações não bloqueiam venda */
+    }
+
     res.status(201).json(venda)
   } catch (error) {
     res.status(500).json({ message: 'Erro ao registrar venda.' })

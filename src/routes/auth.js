@@ -60,7 +60,7 @@ router.post('/register', async (req, res) => {
         cidade: user.cidade, estado: user.estado, taxaPrazo: user.taxaPrazo,
         logoUrl: user.logoUrl, pdvCores: user.pdvCores, telefone: user.telefone,
         plano: user.plano, assinaturaStatus: user.assinaturaStatus,
-        assinaturaExpira: user.assinaturaExpira, testeExpira: user.testeExpira
+        assinaturaExpira: user.assinaturaExpira, testeExpira: user.testeExpira, planoWhatsapp: user.planoWhatsapp, whatsappAssinaturaExpira: user.whatsappAssinaturaExpira
       }
     })
   } catch (error) {
@@ -112,7 +112,7 @@ router.post('/login', async (req, res) => {
         cidade: user.cidade, estado: user.estado, taxaPrazo: user.taxaPrazo,
         logoUrl: user.logoUrl, pdvCores: user.pdvCores, telefone: user.telefone,
         plano: user.plano, assinaturaStatus: user.assinaturaStatus,
-        assinaturaExpira: user.assinaturaExpira, testeExpira: user.testeExpira
+        assinaturaExpira: user.assinaturaExpira, testeExpira: user.testeExpira, planoWhatsapp: user.planoWhatsapp, whatsappAssinaturaExpira: user.whatsappAssinaturaExpira
       }
     })
   } catch (error) {
@@ -132,7 +132,7 @@ router.get('/me', auth, async (req, res) => {
       cidade: user.cidade, estado: user.estado, taxaPrazo: user.taxaPrazo,
       logoUrl: user.logoUrl, pdvCores: user.pdvCores, telefone: user.telefone,
       plano: user.plano, assinaturaStatus: user.assinaturaStatus,
-      assinaturaExpira: user.assinaturaExpira, testeExpira: user.testeExpira
+      assinaturaExpira: user.assinaturaExpira, testeExpira: user.testeExpira, planoWhatsapp: user.planoWhatsapp, whatsappAssinaturaExpira: user.whatsappAssinaturaExpira
     }
 
     // Operador herda logoUrl, pdvCores e nomeNegocio do dono
@@ -172,7 +172,7 @@ router.put('/me', auth, async (req, res) => {
         cidade: user.cidade, estado: user.estado, taxaPrazo: user.taxaPrazo,
         logoUrl: user.logoUrl, pdvCores: user.pdvCores, telefone: user.telefone,
         plano: user.plano, assinaturaStatus: user.assinaturaStatus,
-        assinaturaExpira: user.assinaturaExpira, testeExpira: user.testeExpira
+        assinaturaExpira: user.assinaturaExpira, testeExpira: user.testeExpira, planoWhatsapp: user.planoWhatsapp, whatsappAssinaturaExpira: user.whatsappAssinaturaExpira
       }
     })
   } catch (error) {

@@ -134,6 +134,19 @@ const userSchema = new mongoose.Schema({
   testeExpira: {
     type: Date,
     default: null
+  },
+  // === Add-on Automação WhatsApp ===
+  planoWhatsapp: {
+    type: Boolean,
+    default: false
+  },
+  whatsappAssinaturaInicio: {
+    type: Date,
+    default: null
+  },
+  whatsappAssinaturaExpira: {
+    type: Date,
+    default: null
   }
 }, { timestamps: true })
 
