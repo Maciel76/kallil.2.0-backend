@@ -193,14 +193,28 @@ router.post("/importar", async (req, res) => {
         .status(400)
         .json({ message: "Nenhum produto enviado para importação." });
     }
-    if (lista.length > 2000) {
-      return res
-        .status(400)
-        .json({ message: "Importação limitada a 2000 produtos por arquivo." });
+
+    // Buscar usuário e verificar add-on WhatsApp
+    const user = await User.findById(req.userId);
+    const whatsappAtivo = !!(user?.planoWhatsapp && user?.whatsappAssinaturaExpira && user.whatsappAssinaturaExpira > new Date());
+
+    // Limite do arquivo: ilimitado para WhatsApp, 2000 para pago, 200 para gratuito
+    if (!whatsappAtivo) {
+      const limiteArquivo = req.planoAtual === "pago" ? 2000 : 200;
+      if (lista.length > limiteArquivo) {
+        return res
+          .status(400)
+          .json({
+            message: whatsappAtivo
+              ? "Erro inesperado de limite."
+              : req.planoAtual === "pago"
+              ? "Importação limitada a 2000 produtos por arquivo. Para importar mais, ative o Add-on Automação WhatsApp."
+              : `Importação limitada a ${limiteArquivo} produtos por arquivo no plano gratuito. Faça upgrade para importar mais.`,
+          });
+      }
     }
 
     // Verificar limite do plano (similar ao verificarLimite, porém em lote)
-    const user = await User.findById(req.userId);
     if (user && user.role !== "admin" && req.planoAtual !== "pago") {
       const config = await PlanoConfig.getConfig();
       const max = config?.gratuito?.maxProdutos || 0;

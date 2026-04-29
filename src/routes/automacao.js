@@ -254,6 +254,45 @@ router.post('/test-message', async (req, res) => {
   }
 })
 
+// POST /api/automacao/enviar-cupom — envia cupom da venda pelo WhatsApp
+router.post('/enviar-cupom', async (req, res) => {
+  try {
+    const { vendaId, number } = req.body
+    if (!vendaId || !number) return res.status(400).json({ message: 'vendaId e number são obrigatórios.' })
+    const Venda = require('../models/Venda')
+    const venda = await Venda.findOne({ _id: vendaId, userId: req.userRealId })
+    if (!venda) return res.status(404).json({ message: 'Venda não encontrada.' })
+    const instance = await WhatsAppInstance.findOne({ userId: req.userRealId })
+    if (!instance) return res.status(404).json({ message: 'Instância não encontrada.' })
+    if (instance.status !== 'connected') return res.status(400).json({ message: 'WhatsApp não conectado.' })
+    const wa = activeSessions.get(instance._id.toString())
+    if (!wa || !wa.connected) return res.status(400).json({ message: 'Sessão inativa. Reconecte.' })
+
+    const userDoc = await User.findById(req.userRealId).select('nomeNegocio')
+    const labelPag = { dinheiro: 'Dinheiro', pix: 'PIX', debito: 'Cartão Débito', credito: 'Cartão Crédito', fiado: 'Fiado/Prazo' }
+    const numCupom = venda._id.toString().slice(-6).toUpperCase()
+    const dataVenda = new Date(venda.createdAt).toLocaleString('pt-BR')
+    const fmt = (v) => `R$ ${Number(v || 0).toFixed(2).replace('.', ',')}`
+    let itensTxt = ''
+    for (const i of venda.itens) {
+      itensTxt += `• ${i.qty}x ${i.nome} — ${fmt(i.subtotal)}\n`
+    }
+    const mensagem =
+      `🧾 *${userDoc?.nomeNegocio || 'Cupom de Venda'}*\n` +
+      `Cupom Nº ${numCupom}\n${dataVenda}\n\n` +
+      `${itensTxt}\n` +
+      `Total: *${fmt(venda.totalFinal)}*\n` +
+      `Pagamento: ${labelPag[venda.formaPagamento] || venda.formaPagamento}\n\n` +
+      `Obrigado pela preferência! 💚`
+
+    await wa.sendMessage(number, mensagem)
+    res.json({ message: 'Cupom enviado!' })
+  } catch (err) {
+    console.error('[AUTOMACAO] enviar-cupom:', err.message)
+    res.status(500).json({ message: 'Erro: ' + err.message })
+  }
+})
+
 // POST /api/automacao/resumo-agora — força envio de resumo do dia
 router.post('/resumo-agora', async (req, res) => {
   try {
@@ -955,5 +994,6 @@ router.post('/workflows/templates', async (req, res) => {
 
 // Helper para outros módulos
 router.getActiveSessions = () => activeSessions
+router.activeSessions = activeSessions
 
 module.exports = router

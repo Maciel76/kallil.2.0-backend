@@ -26,6 +26,31 @@ router.get('/', async (req, res) => {
     if (comDivida === 'true') filtro.totalDevido = { $gt: 0 }
 
     const clientes = await Cliente.find(filtro).sort({ nome: 1 })
+
+    // Enriquecer cada cliente devedor com a próxima data de vencimento (mais antiga ainda em aberto)
+    const idsComDivida = clientes.filter(c => c.totalDevido > 0).map(c => c._id)
+    if (idsComDivida.length > 0) {
+      const dividas = await Venda.find({
+        userId: req.userId,
+        clienteId: { $in: idsComDivida },
+        status: 'fiado',
+        dataVencimento: { $ne: null }
+      }).select('clienteId dataVencimento').lean()
+      const mapaVenc = {}
+      for (const d of dividas) {
+        const key = d.clienteId.toString()
+        if (!mapaVenc[key] || new Date(d.dataVencimento) < new Date(mapaVenc[key])) {
+          mapaVenc[key] = d.dataVencimento
+        }
+      }
+      const lista = clientes.map(c => {
+        const obj = c.toObject()
+        obj.proximoVencimento = mapaVenc[c._id.toString()] || null
+        return obj
+      })
+      return res.json(lista)
+    }
+
     res.json(clientes)
   } catch (error) {
     res.status(500).json({ message: 'Erro ao buscar clientes.' })
@@ -253,6 +278,43 @@ router.delete('/:id', async (req, res) => {
     res.json({ message: 'Cliente removido com sucesso.' })
   } catch (error) {
     res.status(500).json({ message: 'Erro ao remover cliente.' })
+  }
+})
+
+// POST /api/clientes/:id/cobrar-whatsapp — envia cobrança ao cliente pelo WhatsApp
+router.post('/:id/cobrar-whatsapp', async (req, res) => {
+  try {
+    const cliente = await Cliente.findOne({ _id: req.params.id, userId: req.userId })
+    if (!cliente) return res.status(404).json({ message: 'Cliente não encontrado.' })
+    if (!cliente.telefone) return res.status(400).json({ message: 'Cliente não possui telefone cadastrado.' })
+
+    // Verifica add-on WhatsApp ativo
+    const userDoc = await User.findById(req.userId).select('planoWhatsapp whatsappAssinaturaExpira nomeNegocio')
+    const ativo = userDoc?.planoWhatsapp && userDoc?.whatsappAssinaturaExpira && userDoc.whatsappAssinaturaExpira > new Date()
+    if (!ativo) return res.status(403).json({ message: 'Add-on Automação WhatsApp não está ativo.' })
+
+    const WhatsAppInstance = require('../models/WhatsAppInstance')
+    const instance = await WhatsAppInstance.findOne({ userId: req.userId })
+    if (!instance) return res.status(404).json({ message: 'Instância WhatsApp não encontrada.' })
+    if (instance.status !== 'connected') return res.status(400).json({ message: 'WhatsApp não conectado.' })
+
+    // Pega sessão ativa via cache do módulo automacao
+    const automacaoMod = require('./automacao')
+    const wa = automacaoMod.activeSessions?.get(instance._id.toString())
+    if (!wa || !wa.connected) return res.status(400).json({ message: 'Sessão WhatsApp inativa. Reconecte.' })
+
+    const fmt = (v) => `R$ ${Number(v || 0).toFixed(2).replace('.', ',')}`
+    const mensagem = req.body?.mensagem ||
+      `Olá ${cliente.nome}! 👋\n\n` +
+      `Esta é uma mensagem de cobrança da *${userDoc.nomeNegocio || 'nossa loja'}*.\n` +
+      `Você tem um saldo em aberto no valor de *${fmt(cliente.totalDevido)}*.\n\n` +
+      `Por favor, entre em contato para regularizar o pagamento. Obrigado! 💚`
+
+    await wa.sendMessage(cliente.telefone, mensagem)
+    res.json({ message: 'Cobrança enviada!' })
+  } catch (err) {
+    console.error('[CLIENTES] cobrar-whatsapp:', err.message)
+    res.status(500).json({ message: 'Erro: ' + err.message })
   }
 })
 

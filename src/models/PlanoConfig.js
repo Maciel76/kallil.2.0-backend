@@ -29,7 +29,14 @@ const planoConfigSchema = new mongoose.Schema({
   whatsapp: {
     nome: { type: String, default: 'Automação WhatsApp' },
     valorMensal: { type: Number, default: 89.90 },
-    ativo: { type: Boolean, default: true }
+    ativo: { type: Boolean, default: true },
+    // Recursos individuais — admin pode ligar/desligar
+    workflows: { type: Boolean, default: true },
+    cobrancaAutomatica: { type: Boolean, default: true },
+    enviarCupom: { type: Boolean, default: true },
+    resumoDiario: { type: Boolean, default: true },
+    importacaoIlimitada: { type: Boolean, default: true },
+    cobrarClientes: { type: Boolean, default: true }
   },
   // Dias de teste grátis para novos usuários
   diasTeste: { type: Number, default: 7 }

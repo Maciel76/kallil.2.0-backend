@@ -127,6 +127,12 @@ router.put('/config', auth, authorize('admin'), async (req, res) => {
       if (whatsapp.nome !== undefined) config.whatsapp.nome = whatsapp.nome
       if (whatsapp.valorMensal !== undefined) config.whatsapp.valorMensal = whatsapp.valorMensal
       if (whatsapp.ativo !== undefined) config.whatsapp.ativo = whatsapp.ativo
+      if (whatsapp.workflows !== undefined) config.whatsapp.workflows = whatsapp.workflows
+      if (whatsapp.cobrancaAutomatica !== undefined) config.whatsapp.cobrancaAutomatica = whatsapp.cobrancaAutomatica
+      if (whatsapp.enviarCupom !== undefined) config.whatsapp.enviarCupom = whatsapp.enviarCupom
+      if (whatsapp.resumoDiario !== undefined) config.whatsapp.resumoDiario = whatsapp.resumoDiario
+      if (whatsapp.importacaoIlimitada !== undefined) config.whatsapp.importacaoIlimitada = whatsapp.importacaoIlimitada
+      if (whatsapp.cobrarClientes !== undefined) config.whatsapp.cobrarClientes = whatsapp.cobrarClientes
     }
 
     await config.save()
