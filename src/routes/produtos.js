@@ -215,7 +215,8 @@ router.post("/importar", async (req, res) => {
     }
 
     // Verificar limite do plano (similar ao verificarLimite, porém em lote)
-    if (user && user.role !== "admin" && req.planoAtual !== "pago") {
+    // WhatsApp ativo ou plano pago = sem limite de cadastro
+    if (user && user.role !== "admin" && !whatsappAtivo && req.planoAtual !== "pago") {
       const config = await PlanoConfig.getConfig();
       const max = config?.gratuito?.maxProdutos || 0;
       if (max > 0) {

@@ -21,6 +21,15 @@ const verificarAssinatura = async (req, res, next) => {
     const agora = new Date()
 
     // Verificar status da assinatura
+    // Add-on WhatsApp ativo → equivale a plano pago (hierarquia superior)
+    const whatsappAtivo = !!(dono.planoWhatsapp && dono.whatsappAssinaturaExpira && dono.whatsappAssinaturaExpira > agora)
+    if (whatsappAtivo) {
+      req.planoAtual = 'pago'
+      req.whatsappAtivo = true
+      req.assinaturaStatus = 'ativo'
+      return next()
+    }
+
     if (dono.plano === 'pago' && dono.assinaturaStatus === 'ativo') {
       if (dono.assinaturaExpira && dono.assinaturaExpira < agora) {
         dono.assinaturaStatus = 'expirado'

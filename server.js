@@ -90,7 +90,7 @@ app.use(cors({
   },
   credentials: true
 }))
-app.use(express.json({ limit: '5mb' }))
+app.use(express.json({ limit: '60mb' }))
 
 // Rotas da API
 app.use('/api/auth', require('./src/routes/auth'))
@@ -108,6 +108,7 @@ app.use('/api/pagamento', require('./src/routes/pagamento'))
 app.use('/api/suporte', require('./src/routes/suporte'))
 app.use('/api/whatsapp', require('./src/routes/whatsapp'))
 app.use('/api/automacao', require('./src/routes/automacao'))
+app.use('/api/migracao', require('./src/routes/migracao'))
 
 // Rota de saúde
 app.get('/api/health', (req, res) => {

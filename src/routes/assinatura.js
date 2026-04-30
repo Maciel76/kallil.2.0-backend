@@ -32,7 +32,9 @@ router.get('/meu-plano', auth, async (req, res) => {
       await removerDespesaAssinatura(user._id)
     }
 
-    const limites = user.plano === 'pago' && user.assinaturaStatus === 'ativo'
+    // WhatsApp ativo → limites do plano pago (superior)
+    const whatsappAtivoAgora = !!(user.planoWhatsapp && user.whatsappAssinaturaExpira && user.whatsappAssinaturaExpira > agora)
+    const limites = whatsappAtivoAgora || (user.plano === 'pago' && user.assinaturaStatus === 'ativo')
       ? config.pago
       : (user.assinaturaStatus === 'teste' && user.testeExpira > agora ? config.pago : config.gratuito)
 
