@@ -6,9 +6,12 @@ const despesaSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  nome: {
+    type: String,
+    trim: true
+  },
   descricao: {
     type: String,
-    required: [true, 'Descrição é obrigatória'],
     trim: true
   },
   valor: {
@@ -18,8 +21,25 @@ const despesaSchema = new mongoose.Schema({
   },
   categoria: {
     type: String,
-    enum: ['Aluguel', 'Fornecedor', 'Energia', 'Transporte', 'Marketing', 'Assinatura', 'Outros'],
-    default: 'Outros'
+    default: 'Outros',
+    trim: true
+  },
+  formaPagamento: {
+    type: String,
+    enum: ['dinheiro', 'pix', 'debito', 'credito', 'transferencia', 'boleto', 'outro'],
+    default: null
+  },
+  data: {
+    type: Date,
+    default: Date.now
+  },
+  quandoPagar: {
+    type: Date,
+    default: null
+  },
+  pago: {
+    type: Boolean,
+    default: false
   },
   fixa: {
     type: Boolean,
@@ -34,10 +54,6 @@ const despesaSchema = new mongoose.Schema({
     type: String,
     enum: ['nenhuma', 'mensal'],
     default: 'nenhuma'
-  },
-  data: {
-    type: Date,
-    default: Date.now
   }
 }, { timestamps: true })
 
