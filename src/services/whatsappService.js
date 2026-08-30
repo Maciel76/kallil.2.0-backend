@@ -305,6 +305,15 @@ class WhatsAppService extends EventEmitter {
     const number = this._extractNumber(jid)
     const pushName = msg.pushName || number
 
+    // === Agente IA ===
+    // Se o dono dessa instância tiver um agente ativo, a IA responde primeiro.
+    // Se a IA marcar transferência para humano, o workflow pega depois.
+    try {
+      await this._responderAgenteIA({ jid, number, pushName, text })
+    } catch (err) {
+      console.error('[WA-PDV] Erro agente IA:', err.message)
+    }
+
     // Importação tardia para evitar ciclos
     const WorkflowEngine = require('./workflowEngine')
 
@@ -321,6 +330,51 @@ class WhatsAppService extends EventEmitter {
       })
     } catch (err) {
       console.error('[WA-PDV] Workflow engine falhou:', err.message)
+    }
+  }
+
+  async _responderAgenteIA({ jid, number, pushName, text }) {
+    try {
+      const AgenteIA = require('../models/AgenteIA')
+      const deepseek = require('./deepseekService')
+      const agenteService = require('./agenteService')
+
+      if (!deepseek.isEnabled()) return
+
+      const userId = this.instance.userId
+      const agente = await AgenteIA.findOne({ userId, ativo: true }).sort({ createdAt: -1 })
+      if (!agente) return // sem agente ativo → cai pro workflow normalmente
+
+      // Saudação automática
+      if (agente.saudacao) {
+        try {
+          const jidNumero = jid.split('@')[0]
+          await this.sendMessage(jidNumero, agente.saudacao)
+        } catch (e) {
+          console.warn('[WA-PDV] Falha ao enviar saudação:', e.message)
+        }
+      }
+
+      const out = await agenteService.responder({
+        agente,
+        userId,
+        mensagem: text,
+        contextoCliente: number
+      })
+
+      if (out.resposta) {
+        const jidNumero = jid.split('@')[0]
+        await this.sendMessage(jidNumero, out.resposta)
+      }
+
+      // Marca transferência para que o workflow avise o humano
+      this._ultimaTransferenciaHumano = out.transferiu
+        ? { jid, number, agenteId: agente._id, quando: new Date() }
+        : (this._ultimaTransferenciaHumano && this._ultimaTransferenciaHumano.number === number
+            ? null
+            : this._ultimaTransferenciaHumano)
+    } catch (err) {
+      console.error('[WA-PDV] _responderAgenteIA:', err.message)
     }
   }
 

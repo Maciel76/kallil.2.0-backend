@@ -114,7 +114,9 @@ router.get('/usuarios', async (req, res) => {
       nome: u.nome,
       email: u.email,
       nomeNegocio: u.nomeNegocio,
+      telefone: u.telefone,
       role: u.role,
+      donoId: u.donoId,
       ativo: u.ativo,
       createdAt: u.createdAt
     }))
@@ -147,6 +149,242 @@ router.patch('/usuarios/:id/toggle', async (req, res) => {
     res.json({ ativo: user.ativo })
   } catch (error) {
     res.status(500).json({ message: 'Erro ao alterar status.' })
+  }
+})
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+// Modelos que guardam os dados de um negócio (chaveados pelo userId do dono)
+const modelosDoNegocio = () => [
+  require('../models/Venda'),
+  require('../models/Produto'),
+  require('../models/Cliente'),
+  require('../models/Caixa'),
+  require('../models/Despesa'),
+  require('../models/CategoriaDespesa'),
+  require('../models/Pagamento'),
+  require('../models/PagamentoDivida'),
+  require('../models/AgenteIA'),
+  require('../models/BaseConhecimento'),
+  require('../models/UsoIA'),
+  require('../models/SuporteTicket'),
+  require('../models/Workflow')
+]
+
+const formatarUsuario = (u) => ({
+  id: u._id,
+  nome: u.nome,
+  email: u.email,
+  nomeNegocio: u.nomeNegocio,
+  telefone: u.telefone,
+  role: u.role,
+  donoId: u.donoId,
+  ativo: u.ativo,
+  createdAt: u.createdAt
+})
+
+// GET /api/admin/usuarios/donos — lista enxuta de donos (para vincular operadores)
+router.get('/usuarios/donos', async (req, res) => {
+  try {
+    const donos = await User.find({ role: 'dono' })
+      .select('_id nome nomeNegocio email')
+      .sort({ nome: 1 })
+      .lean()
+
+    res.json(donos.map(d => ({
+      id: d._id,
+      nome: d.nome,
+      nomeNegocio: d.nomeNegocio || d.nome,
+      email: d.email
+    })))
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao carregar donos.' })
+  }
+})
+
+// POST /api/admin/usuarios — criar usuário
+router.post('/usuarios', async (req, res) => {
+  try {
+    const nome = (req.body.nome || '').trim()
+    const email = (req.body.email || '').trim().toLowerCase()
+    const senha = req.body.senha || ''
+    const role = req.body.role || 'dono'
+    const nomeNegocio = (req.body.nomeNegocio || '').trim()
+    const telefone = (req.body.telefone || '').trim()
+    const donoId = req.body.donoId || null
+
+    if (!nome || !email || !senha) {
+      return res.status(400).json({ message: 'Nome, e-mail e senha são obrigatórios.' })
+    }
+    if (!EMAIL_REGEX.test(email)) {
+      return res.status(400).json({ message: 'E-mail inválido.' })
+    }
+    if (senha.length < 6) {
+      return res.status(400).json({ message: 'A senha deve ter no mínimo 6 caracteres.' })
+    }
+    if (!['admin', 'dono', 'operador'].includes(role)) {
+      return res.status(400).json({ message: 'Tipo de usuário inválido.' })
+    }
+
+    const existe = await User.findOne({ email })
+    if (existe) {
+      return res.status(400).json({ message: 'E-mail já cadastrado.' })
+    }
+
+    const dados = { nome, email, senha, role, telefone }
+
+    if (role === 'operador') {
+      if (!mongoose.Types.ObjectId.isValid(String(donoId || ''))) {
+        return res.status(400).json({ message: 'Selecione o negócio ao qual o operador pertence.' })
+      }
+      const dono = await User.findOne({ _id: donoId, role: 'dono' })
+      if (!dono) return res.status(400).json({ message: 'Negócio não encontrado.' })
+      dados.donoId = dono._id
+    } else {
+      dados.nomeNegocio = nomeNegocio
+    }
+
+    const user = await User.create(dados)
+    res.status(201).json(formatarUsuario(user))
+  } catch (error) {
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ message: Object.values(error.errors)[0]?.message || 'Dados inválidos.' })
+    }
+    if (error.code === 11000) {
+      return res.status(400).json({ message: 'E-mail já cadastrado.' })
+    }
+    res.status(500).json({ message: 'Erro ao criar usuário.' })
+  }
+})
+
+// PUT /api/admin/usuarios/:id — editar nome, e-mail, senha, negócio, telefone e tipo
+router.put('/usuarios/:id', async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id)
+    if (!user) return res.status(404).json({ message: 'Usuário não encontrado.' })
+
+    const { nome, email, senha, nomeNegocio, telefone, role, donoId, ativo } = req.body
+
+    if (nome !== undefined) {
+      const novoNome = String(nome).trim()
+      if (!novoNome) return res.status(400).json({ message: 'O nome não pode ficar vazio.' })
+      user.nome = novoNome
+    }
+
+    if (email !== undefined) {
+      const novoEmail = String(email).trim().toLowerCase()
+      if (!EMAIL_REGEX.test(novoEmail)) {
+        return res.status(400).json({ message: 'E-mail inválido.' })
+      }
+      if (novoEmail !== user.email) {
+        const existe = await User.findOne({ email: novoEmail, _id: { $ne: user._id } })
+        if (existe) return res.status(400).json({ message: 'E-mail já cadastrado.' })
+        user.email = novoEmail
+      }
+    }
+
+    if (senha) {
+      if (String(senha).length < 6) {
+        return res.status(400).json({ message: 'A senha deve ter no mínimo 6 caracteres.' })
+      }
+      user.senha = String(senha)
+    }
+
+    if (nomeNegocio !== undefined) user.nomeNegocio = String(nomeNegocio).trim()
+    if (telefone !== undefined) user.telefone = String(telefone).trim()
+
+    if (role !== undefined && role !== user.role) {
+      if (!['admin', 'dono', 'operador'].includes(role)) {
+        return res.status(400).json({ message: 'Tipo de usuário inválido.' })
+      }
+      if (String(user._id) === String(req.userRealId)) {
+        return res.status(400).json({ message: 'Você não pode alterar o seu próprio tipo de usuário.' })
+      }
+      if (user.role === 'dono') {
+        const totalOperadores = await User.countDocuments({ donoId: user._id, role: 'operador' })
+        if (totalOperadores > 0) {
+          return res.status(400).json({ message: 'Este negócio possui operadores vinculados. Remova-os antes de alterar o tipo.' })
+        }
+      }
+      user.role = role
+    }
+
+    if (user.role === 'operador') {
+      const novoDono = donoId !== undefined ? donoId : user.donoId
+      if (!mongoose.Types.ObjectId.isValid(String(novoDono || ''))) {
+        return res.status(400).json({ message: 'Selecione o negócio ao qual o operador pertence.' })
+      }
+      const dono = await User.findOne({ _id: novoDono, role: 'dono' })
+      if (!dono) return res.status(400).json({ message: 'Negócio não encontrado.' })
+      user.donoId = dono._id
+    } else {
+      user.donoId = null
+    }
+
+    if (ativo !== undefined) {
+      if (user.role === 'admin' && !ativo) {
+        return res.status(400).json({ message: 'Não é possível desativar um admin.' })
+      }
+      user.ativo = Boolean(ativo)
+    }
+
+    await user.save()
+    res.json(formatarUsuario(user))
+  } catch (error) {
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ message: Object.values(error.errors)[0]?.message || 'Dados inválidos.' })
+    }
+    if (error.code === 11000) {
+      return res.status(400).json({ message: 'E-mail já cadastrado.' })
+    }
+    res.status(500).json({ message: 'Erro ao editar usuário.' })
+  }
+})
+
+// DELETE /api/admin/usuarios/:id — excluir usuário (para donos, remove todo o negócio)
+router.delete('/usuarios/:id', async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id)
+    if (!user) return res.status(404).json({ message: 'Usuário não encontrado.' })
+
+    if (String(user._id) === String(req.userRealId)) {
+      return res.status(400).json({ message: 'Você não pode excluir a sua própria conta.' })
+    }
+    if (user.role === 'admin') {
+      return res.status(400).json({ message: 'Não é possível excluir um admin.' })
+    }
+
+    const resumo = { operadoresRemovidos: 0, registrosRemovidos: 0 }
+
+    if (user.role === 'dono') {
+      const operadores = await User.deleteMany({ donoId: user._id, role: 'operador' })
+      resumo.operadoresRemovidos = operadores.deletedCount || 0
+
+      // Instâncias do WhatsApp levam junto as tags e sessões de workflow
+      const WhatsAppInstance = require('../models/WhatsAppInstance')
+      const instancias = await WhatsAppInstance.find({ userId: user._id }).select('_id').lean()
+      const instanciaIds = instancias.map(i => i._id)
+      if (instanciaIds.length) {
+        const [tags, sessoes] = await Promise.all([
+          require('../models/ContactTag').deleteMany({ instanceId: { $in: instanciaIds } }),
+          require('../models/WorkflowSession').deleteMany({ instanceId: { $in: instanciaIds } })
+        ])
+        resumo.registrosRemovidos += (tags.deletedCount || 0) + (sessoes.deletedCount || 0)
+      }
+
+      const resultados = await Promise.all([
+        ...modelosDoNegocio().map(Modelo => Modelo.deleteMany({ userId: user._id })),
+        WhatsAppInstance.deleteMany({ userId: user._id })
+      ])
+      resumo.registrosRemovidos += resultados.reduce((total, r) => total + (r.deletedCount || 0), 0)
+    }
+
+    await User.deleteOne({ _id: user._id })
+
+    res.json({ message: 'Usuário excluído com sucesso.', ...resumo })
+  } catch (error) {
+    console.error('Erro ao excluir usuário:', error)
+    res.status(500).json({ message: 'Erro ao excluir usuário.' })
   }
 })
 

@@ -110,6 +110,7 @@ app.use('/api/suporte', require('./src/routes/suporte'))
 app.use('/api/whatsapp', require('./src/routes/whatsapp'))
 app.use('/api/automacao', require('./src/routes/automacao'))
 app.use('/api/migracao', require('./src/routes/migracao'))
+app.use('/api/agentes', require('./src/routes/agentes'))
 
 // Rota de saúde
 app.get('/api/health', (req, res) => {
