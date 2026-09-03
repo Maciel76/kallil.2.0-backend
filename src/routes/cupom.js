@@ -3,6 +3,7 @@ const router = express.Router();
 const Venda = require("../models/Venda");
 const User = require("../models/User");
 const auth = require("../middleware/auth");
+const { formatQtd } = require("../utils/unidades");
 
 router.use(auth);
 
@@ -34,7 +35,7 @@ router.get("/:vendaId", async (req, res) => {
       itensHTML += `
         <tr>
           <td style="text-align:left;font-size:20px">${item.nome}</td>
-          <td style="text-align:center;font-size:20px">${item.qty}</td>
+          <td style="text-align:center;font-size:20px">${formatQtd(item.qty, item.unidade)}</td>
           <td style="text-align:right;font-size:20px">${item.precoUnit.toFixed(2)}</td>
           <td style="text-align:right;font-size:20px">${item.subtotal.toFixed(2)}</td>
         </tr>`;

@@ -260,6 +260,7 @@ router.post('/enviar-cupom', async (req, res) => {
     const { vendaId, number } = req.body
     if (!vendaId || !number) return res.status(400).json({ message: 'vendaId e number são obrigatórios.' })
     const Venda = require('../models/Venda')
+    const { formatQtdItem } = require('../utils/unidades')
     const venda = await Venda.findOne({ _id: vendaId, userId: req.userRealId })
     if (!venda) return res.status(404).json({ message: 'Venda não encontrada.' })
     const instance = await WhatsAppInstance.findOne({ userId: req.userRealId })
@@ -275,7 +276,7 @@ router.post('/enviar-cupom', async (req, res) => {
     const fmt = (v) => `R$ ${Number(v || 0).toFixed(2).replace('.', ',')}`
     let itensTxt = ''
     for (const i of venda.itens) {
-      itensTxt += `• ${i.qty}x ${i.nome} — ${fmt(i.subtotal)}\n`
+      itensTxt += `• ${formatQtdItem(i.qty, i.unidade)} ${i.nome} — ${fmt(i.subtotal)}\n`
     }
     const mensagem =
       `🧾 *${userDoc?.nomeNegocio || 'Cupom de Venda'}*\n` +

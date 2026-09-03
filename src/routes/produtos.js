@@ -415,13 +415,17 @@ router.patch("/:id/estoque", async (req, res) => {
     if (!produto)
       return res.status(404).json({ message: "Produto não encontrado." });
 
+    // Arredonda conforme a unidade (produtos por kg/l aceitam decimais)
+    const { arredondarQtd } = require("../utils/unidades");
+    const qtd = arredondarQtd(quantidade, produto.unidade);
+
     if (tipo === "entrada") {
-      produto.estoque += quantidade;
+      produto.estoque = arredondarQtd(produto.estoque + qtd, produto.unidade);
     } else if (tipo === "saida") {
-      if (produto.estoque < quantidade) {
+      if (produto.estoque < qtd) {
         return res.status(400).json({ message: "Estoque insuficiente." });
       }
-      produto.estoque -= quantidade;
+      produto.estoque = arredondarQtd(produto.estoque - qtd, produto.unidade);
     } else {
       return res
         .status(400)

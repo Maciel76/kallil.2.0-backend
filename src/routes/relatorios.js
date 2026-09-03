@@ -76,9 +76,11 @@ router.get('/produtos-mais-vendidos', async (req, res) => {
     const resultado = await Venda.aggregate([
       { $match: { userId: new mongoose.Types.ObjectId(req.userId), status: 'pago' } },
       { $unwind: '$itens' },
-      { $group: { _id: '$itens.nome', total: { $sum: '$itens.qty' }, receita: { $sum: '$itens.subtotal' } } },
+      { $group: { _id: '$itens.nome', total: { $sum: '$itens.qty' }, receita: { $sum: '$itens.subtotal' }, unidade: { $first: '$itens.unidade' } } },
       { $sort: { total: -1 } },
-      { $limit: 5 }
+      { $limit: 5 },
+      // Arredonda para não exibir 12.300000000000001 em produtos vendidos por kg
+      { $set: { total: { $round: ['$total', 3] }, receita: { $round: ['$receita', 2] } } }
     ])
     res.json(resultado)
   } catch (error) {
@@ -113,7 +115,9 @@ router.get('/formas-pagamento', async (req, res) => {
 router.get('/vendas', async (req, res) => {
   try {
     const { inicio, fim } = req.query
-    const filtro = { userId: req.userId, status: { $ne: 'cancelado' } }
+    // Traz pago/fiado/cancelado (histórico completo, para auditoria) e deixa
+    // de fora só 'espera' — vendas ainda não finalizadas não são "vendas do período".
+    const filtro = { userId: req.userId, status: { $in: ['pago', 'fiado', 'cancelado'] } }
 
     if (inicio || fim) {
       filtro.createdAt = {}
@@ -121,18 +125,27 @@ router.get('/vendas', async (req, res) => {
       if (fim) filtro.createdAt.$lte = new Date(fim + 'T23:59:59')
     }
 
-    const vendas = await Venda.find(filtro).sort({ createdAt: -1 })
-    const totalVendas = vendas.reduce((acc, v) => acc + v.totalFinal, 0)
-    const totalDescontos = vendas.reduce((acc, v) => acc + v.desconto, 0)
-    const lucroTotal = vendas.reduce((acc, v) => acc + (v.lucroTotal || 0), 0)
+    const todasVendas = await Venda.find(filtro).sort({ createdAt: -1 })
+    // Canceladas ficam visíveis no histórico, mas saem dos totais de vendas/lucro
+    const vendasValidas = todasVendas.filter(v => v.status !== 'cancelado')
+    const vendasCanceladas = todasVendas.filter(v => v.status === 'cancelado')
+
+    const totalVendas = vendasValidas.reduce((acc, v) => acc + v.totalFinal, 0)
+    const totalDescontos = vendasValidas.reduce((acc, v) => acc + v.desconto, 0)
+    const lucroTotal = vendasValidas.reduce((acc, v) => acc + (v.lucroTotal || 0), 0)
+    const valorCancelado = vendasCanceladas.reduce((acc, v) => acc + v.totalFinal, 0)
 
     res.json({
-      vendas,
+      vendas: todasVendas,
       resumo: {
-        quantidade: vendas.length,
+        quantidade: vendasValidas.length,
         totalVendas,
         totalDescontos,
         lucroTotal
+      },
+      cancelamentos: {
+        quantidade: vendasCanceladas.length,
+        valorCancelado
       }
     })
   } catch (error) {

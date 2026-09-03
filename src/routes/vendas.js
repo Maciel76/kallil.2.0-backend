@@ -6,6 +6,7 @@ const Cliente = require('../models/Cliente')
 const crypto = require('crypto')
 const auth = require('../middleware/auth')
 const { verificarAssinatura, verificarLimite } = require('../middleware/assinatura')
+const { isFracionado, arredondarQtd, arredondarValor } = require('../utils/unidades')
 
 router.use(auth)
 router.use(verificarAssinatura)
@@ -34,39 +35,59 @@ router.post('/', verificarLimite('vendas'), async (req, res) => {
       const produto = await Produto.findOne({ _id: item.produtoId, userId: req.userId })
       if (!produto) return res.status(404).json({ message: `Produto ${item.produtoId} não encontrado.` })
 
-      const subtotal = produto.precoVenda * item.qty
-      const lucro = (produto.precoVenda - produto.precoCusto) * item.qty
+      // Quantidade: decimal para produtos fracionados (kg, g, l...), inteira para os demais
+      const qty = arredondarQtd(item.qty, produto.unidade)
+      if (!Number.isFinite(qty) || qty <= 0) {
+        return res.status(400).json({ message: `Quantidade inválida para o produto ${produto.nome}.` })
+      }
+      if (!isFracionado(produto.unidade) && !Number.isInteger(qty)) {
+        return res.status(400).json({ message: `O produto ${produto.nome} é vendido por unidade e não aceita quantidade fracionada.` })
+      }
+
+      const subtotal = arredondarValor(produto.precoVenda * qty)
+      const lucro = arredondarValor((produto.precoVenda - produto.precoCusto) * qty)
       total += subtotal
       lucroTotal += lucro
 
       itensProcessados.push({
         produtoId: produto._id,
         nome: produto.nome,
-        qty: item.qty,
+        qty,
+        unidade: produto.unidade || 'un',
         precoUnit: produto.precoVenda,
         precoCusto: produto.precoCusto,
         subtotal,
         lucro
       })
 
-      // Baixar estoque e incrementar vendas
-      await Produto.findByIdAndUpdate(produto._id, {
-        $inc: { estoque: -item.qty, vendasTotal: item.qty }
-      })
+      // Baixar estoque e incrementar vendas (pipeline mantém a operação atômica
+      // e arredonda o resultado, evitando 98.30000000000001 em produtos por kg)
+      await Produto.updateOne({ _id: produto._id }, [
+        {
+          $set: {
+            estoque: { $round: [{ $subtract: [{ $ifNull: ['$estoque', 0] }, qty] }, 3] },
+            vendasTotal: { $round: [{ $add: [{ $ifNull: ['$vendasTotal', 0] }, qty] }, 3] }
+          }
+        }
+      ])
     }
+
+    total = arredondarValor(total)
+    lucroTotal = arredondarValor(lucroTotal)
 
     // Calcular desconto
     let descontoValor = desconto
     if (descontoTipo === 'percentual') {
       descontoValor = total * (desconto / 100)
     }
+    descontoValor = arredondarValor(descontoValor)
 
-    const totalFinal = Math.max(0, total - descontoValor)
+    const totalFinal = arredondarValor(Math.max(0, total - descontoValor))
     const troco = formaPagamento === 'dinheiro' ? Math.max(0, valorRecebido - totalFinal) : 0
     const status = formaPagamento === 'fiado' ? 'fiado' : 'pago'
 
     // Ajustar lucro com desconto
-    lucroTotal = Math.max(0, lucroTotal - descontoValor)
+    lucroTotal = arredondarValor(Math.max(0, lucroTotal - descontoValor))
 
     const venda = await Venda.create({
       userId: req.userId,
@@ -129,25 +150,32 @@ router.post('/espera', async (req, res) => {
       const produto = await Produto.findOne({ _id: item.produtoId, userId: req.userId })
       if (!produto) continue
 
-      const subtotal = produto.precoVenda * item.qty
+      const qty = arredondarQtd(item.qty, produto.unidade)
+      if (!Number.isFinite(qty) || qty <= 0) continue
+
+      const subtotal = arredondarValor(produto.precoVenda * qty)
       total += subtotal
 
       itensProcessados.push({
         produtoId: produto._id,
         nome: produto.nome,
-        qty: item.qty,
+        qty,
+        unidade: produto.unidade || 'un',
         precoUnit: produto.precoVenda,
         precoCusto: produto.precoCusto,
         subtotal,
-        lucro: (produto.precoVenda - produto.precoCusto) * item.qty
+        lucro: arredondarValor((produto.precoVenda - produto.precoCusto) * qty)
       })
     }
+
+    total = arredondarValor(total)
 
     let descontoValor = desconto
     if (descontoTipo === 'percentual') {
       descontoValor = total * (desconto / 100)
     }
-    const totalFinal = Math.max(0, total - descontoValor)
+    descontoValor = arredondarValor(descontoValor)
+    const totalFinal = arredondarValor(Math.max(0, total - descontoValor))
 
     const venda = await Venda.create({
       userId: req.userId,
@@ -231,15 +259,53 @@ router.get('/:id', async (req, res) => {
 })
 
 // DELETE /api/vendas/:id — cancelar venda
+// Não apaga o registro (evita burlar o histórico): só marca status='cancelado',
+// devolve o estoque baixado, desfaz a dívida em aberto do cliente (se fiado) e
+// para de contar essa venda em relatórios, caixa e produtos mais vendidos —
+// que já filtram por status em outras rotas.
 router.delete('/:id', async (req, res) => {
   try {
-    const venda = await Venda.findOneAndUpdate(
-      { _id: req.params.id, userId: req.userId },
-      { status: 'cancelado' },
-      { new: true }
-    )
+    const motivo = (req.body?.motivo || '').trim().slice(0, 300)
+    const venda = await Venda.findOne({ _id: req.params.id, userId: req.userId })
     if (!venda) return res.status(404).json({ message: 'Venda não encontrada.' })
-    res.json({ message: 'Venda cancelada com sucesso.' })
+
+    if (venda.status === 'cancelado') {
+      return res.status(400).json({ message: 'Esta venda já está cancelada.' })
+    }
+    if (venda.status === 'espera') {
+      return res.status(400).json({ message: 'Venda em espera não pode ser cancelada por aqui — remova-a da lista de espera.' })
+    }
+
+    // Devolver o estoque e desfazer a contagem de "vendasTotal" de cada item
+    for (const item of venda.itens) {
+      const produto = await Produto.findOne({ _id: item.produtoId, userId: req.userId })
+      if (!produto) continue
+      await Produto.updateOne({ _id: produto._id }, [
+        {
+          $set: {
+            estoque: { $round: [{ $add: [{ $ifNull: ['$estoque', 0] }, item.qty] }, 3] },
+            vendasTotal: { $round: [{ $max: [0, { $subtract: [{ $ifNull: ['$vendasTotal', 0] }, item.qty] }] }, 3] }
+          }
+        }
+      ])
+    }
+
+    // Reverter a parte ainda em aberto da dívida do cliente (fiado não quitado)
+    if (venda.status === 'fiado' && venda.clienteId) {
+      const restante = arredondarValor(venda.totalFinal - (venda.valorPago || 0))
+      if (restante > 0) {
+        await Cliente.updateOne({ _id: venda.clienteId }, [
+          { $set: { totalDevido: { $max: [0, { $subtract: [{ $ifNull: ['$totalDevido', 0] }, restante] }] } } }
+        ])
+      }
+    }
+
+    venda.status = 'cancelado'
+    venda.canceladoEm = new Date()
+    venda.motivoCancelamento = motivo
+    await venda.save()
+
+    res.json({ message: 'Venda cancelada com sucesso.', venda })
   } catch (error) {
     res.status(500).json({ message: 'Erro ao cancelar venda.' })
   }

@@ -10,7 +10,8 @@ const vendaSchema = new mongoose.Schema({
     {
       produtoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Produto' },
       nome: String,
-      qty: { type: Number, min: 1 },
+      qty: { type: Number, min: 0 },
+      unidade: { type: String, default: 'un' },
       precoUnit: Number,
       precoCusto: Number,
       subtotal: Number,
@@ -103,6 +104,15 @@ const vendaSchema = new mongoose.Schema({
   hashEspera: {
     type: String,
     default: null
+  },
+  canceladoEm: {
+    type: Date,
+    default: null
+  },
+  motivoCancelamento: {
+    type: String,
+    trim: true,
+    default: ''
   }
 }, { timestamps: true })
 
