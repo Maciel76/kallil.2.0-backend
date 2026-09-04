@@ -14,7 +14,7 @@ router.use(verificarAssinatura)
 // POST /api/vendas — finalizar venda
 router.post('/', verificarLimite('vendas'), async (req, res) => {
   try {
-    const { itens, desconto = 0, descontoTipo = 'valor', formaPagamento, clienteId, clienteNome, clienteCpf, valorRecebido = 0, dataVencimento, observacoes, caixaId } = req.body
+    const { itens, desconto = 0, descontoTipo = 'valor', formaPagamento, clienteId, clienteNome, clienteCpf, valorRecebido = 0, dataVencimento, observacoes, caixaId, pagamentos } = req.body
 
     if (!itens || itens.length === 0) {
       return res.status(400).json({ message: 'A venda deve ter ao menos um item.' })
@@ -83,7 +83,45 @@ router.post('/', verificarLimite('vendas'), async (req, res) => {
     descontoValor = arredondarValor(descontoValor)
 
     const totalFinal = arredondarValor(Math.max(0, total - descontoValor))
-    const troco = formaPagamento === 'dinheiro' ? Math.max(0, valorRecebido - totalFinal) : 0
+
+    // Pagamento dividido: soma precisa fechar com o total da venda
+    const pagamentosValidos = Array.isArray(pagamentos)
+      ? pagamentos
+          .filter(p => p && p.forma && Number(p.valor) > 0)
+          .map(p => ({
+            forma: p.forma,
+            valor: arredondarValor(Number(p.valor)),
+            valorRecebido: arredondarValor(Number(p.valorRecebido) || 0),
+            troco: arredondarValor(Number(p.troco) || 0)
+          }))
+      : []
+
+    if (pagamentosValidos.length > 0) {
+      const somaPagamentos = arredondarValor(
+        pagamentosValidos.reduce((acc, p) => acc + p.valor, 0)
+      )
+      if (Math.abs(somaPagamentos - totalFinal) > 0.01) {
+        return res.status(400).json({
+          message: `A soma dos pagamentos (R$ ${somaPagamentos.toFixed(2)}) não confere com o total da venda (R$ ${totalFinal.toFixed(2)}).`
+        })
+      }
+    }
+
+    // Troco e valor recebido consolidados (só o dinheiro gera troco)
+    const trocoDividido = pagamentosValidos
+      .filter(p => p.forma === 'dinheiro')
+      .reduce((acc, p) => acc + p.troco, 0)
+    const recebidoDividido = pagamentosValidos
+      .filter(p => p.forma === 'dinheiro')
+      .reduce((acc, p) => acc + (p.valorRecebido || p.valor), 0)
+
+    const troco = pagamentosValidos.length > 0
+      ? arredondarValor(trocoDividido)
+      : (formaPagamento === 'dinheiro' ? Math.max(0, valorRecebido - totalFinal) : 0)
+    const recebidoFinal = pagamentosValidos.length > 0
+      ? arredondarValor(recebidoDividido)
+      : valorRecebido
+
     const status = formaPagamento === 'fiado' ? 'fiado' : 'pago'
 
     // Ajustar lucro com desconto
@@ -98,8 +136,9 @@ router.post('/', verificarLimite('vendas'), async (req, res) => {
       totalFinal,
       lucroTotal,
       formaPagamento,
-      valorRecebido,
+      valorRecebido: recebidoFinal,
       troco,
+      pagamentos: pagamentosValidos,
       status,
       clienteId: clienteId || null,
       clienteNome: clienteNome || '',

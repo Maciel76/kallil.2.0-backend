@@ -59,6 +59,7 @@ router.post('/register', async (req, res) => {
         email: user.email, role: user.role, cpf: user.cpf, cnpj: user.cnpj, endereco: user.endereco,
         cidade: user.cidade, estado: user.estado, taxaPrazo: user.taxaPrazo,
         logoUrl: user.logoUrl, pdvCores: user.pdvCores, telefone: user.telefone,
+        telefoneLoja1: user.telefoneLoja1, telefoneLoja2: user.telefoneLoja2,
         plano: user.plano, assinaturaStatus: user.assinaturaStatus,
         assinaturaExpira: user.assinaturaExpira, testeExpira: user.testeExpira, planoWhatsapp: user.planoWhatsapp, whatsappAssinaturaExpira: user.whatsappAssinaturaExpira
       }
@@ -111,6 +112,7 @@ router.post('/login', async (req, res) => {
         email: user.email, role: user.role, cnpj: user.cnpj, endereco: user.endereco,
         cidade: user.cidade, estado: user.estado, taxaPrazo: user.taxaPrazo,
         logoUrl: user.logoUrl, pdvCores: user.pdvCores, telefone: user.telefone,
+        telefoneLoja1: user.telefoneLoja1, telefoneLoja2: user.telefoneLoja2,
         plano: user.plano, assinaturaStatus: user.assinaturaStatus,
         assinaturaExpira: user.assinaturaExpira, testeExpira: user.testeExpira, planoWhatsapp: user.planoWhatsapp, whatsappAssinaturaExpira: user.whatsappAssinaturaExpira
       }
@@ -131,6 +133,7 @@ router.get('/me', auth, async (req, res) => {
       email: user.email, role: user.role, cnpj: user.cnpj, endereco: user.endereco,
       cidade: user.cidade, estado: user.estado, taxaPrazo: user.taxaPrazo,
       logoUrl: user.logoUrl, pdvCores: user.pdvCores, telefone: user.telefone,
+      telefoneLoja1: user.telefoneLoja1, telefoneLoja2: user.telefoneLoja2,
       plano: user.plano, assinaturaStatus: user.assinaturaStatus,
       assinaturaExpira: user.assinaturaExpira, testeExpira: user.testeExpira, planoWhatsapp: user.planoWhatsapp, whatsappAssinaturaExpira: user.whatsappAssinaturaExpira
     }
@@ -154,11 +157,14 @@ router.get('/me', auth, async (req, res) => {
 // PUT /api/auth/me — atualizar dados do negócio
 router.put('/me', auth, async (req, res) => {
   try {
-    const { nome, nomeNegocio, cnpj, endereco, cidade, estado, taxaPrazo, logoUrl, pdvCores, telefone } = req.body
+    const { nome, nomeNegocio, cnpj, endereco, cidade, estado, taxaPrazo, logoUrl, pdvCores, telefone, telefoneLoja1, telefoneLoja2 } = req.body
     const updateData = { nome, nomeNegocio, cnpj, endereco, cidade, estado, taxaPrazo }
     if (logoUrl !== undefined) updateData.logoUrl = logoUrl
     if (pdvCores) updateData.pdvCores = pdvCores
     if (telefone !== undefined) updateData.telefone = telefone.replace(/\D/g, '')
+    // Telefones da loja ficam formatados, pois são exibidos no cupom
+    if (telefoneLoja1 !== undefined) updateData.telefoneLoja1 = telefoneLoja1
+    if (telefoneLoja2 !== undefined) updateData.telefoneLoja2 = telefoneLoja2
     const user = await User.findByIdAndUpdate(
       req.userId,
       updateData,
@@ -171,6 +177,7 @@ router.put('/me', auth, async (req, res) => {
         email: user.email, role: user.role, cnpj: user.cnpj, endereco: user.endereco,
         cidade: user.cidade, estado: user.estado, taxaPrazo: user.taxaPrazo,
         logoUrl: user.logoUrl, pdvCores: user.pdvCores, telefone: user.telefone,
+        telefoneLoja1: user.telefoneLoja1, telefoneLoja2: user.telefoneLoja2,
         plano: user.plano, assinaturaStatus: user.assinaturaStatus,
         assinaturaExpira: user.assinaturaExpira, testeExpira: user.testeExpira, planoWhatsapp: user.planoWhatsapp, whatsappAssinaturaExpira: user.whatsappAssinaturaExpira
       }

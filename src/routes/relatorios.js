@@ -49,10 +49,17 @@ router.get('/dashboard', async (req, res) => {
       })
     }
 
-    // Formas de pagamento (mês)
+    // Formas de pagamento (mês). Vendas com pagamento dividido entram
+    // rateadas por forma, em vez de tudo na forma principal.
     const formasPagamento = {}
     vendasMes.forEach(v => {
-      formasPagamento[v.formaPagamento] = (formasPagamento[v.formaPagamento] || 0) + v.totalFinal
+      if (v.pagamentos && v.pagamentos.length > 0) {
+        v.pagamentos.forEach(p => {
+          formasPagamento[p.forma] = (formasPagamento[p.forma] || 0) + p.valor
+        })
+      } else {
+        formasPagamento[v.formaPagamento] = (formasPagamento[v.formaPagamento] || 0) + v.totalFinal
+      }
     })
 
     res.json({
@@ -100,9 +107,25 @@ router.get('/formas-pagamento', async (req, res) => {
       if (fim) filtro.createdAt.$lte = new Date(fim + 'T23:59:59')
     }
 
+    // Pagamento dividido: cada forma entra com o valor que recebeu.
+    // Vendas antigas (sem o array) continuam contando pelo total.
     const resultado = await Venda.aggregate([
       { $match: filtro },
-      { $group: { _id: '$formaPagamento', total: { $sum: '$totalFinal' }, quantidade: { $sum: 1 } } },
+      {
+        $project: {
+          formaPagamento: 1,
+          totalFinal: 1,
+          parcelas: {
+            $cond: [
+              { $gt: [{ $size: { $ifNull: ['$pagamentos', []] } }, 0] },
+              '$pagamentos',
+              [{ forma: '$formaPagamento', valor: '$totalFinal' }]
+            ]
+          }
+        }
+      },
+      { $unwind: '$parcelas' },
+      { $group: { _id: '$parcelas.forma', total: { $sum: '$parcelas.valor' }, quantidade: { $sum: 1 } } },
       { $sort: { total: -1 } }
     ])
     res.json(resultado)

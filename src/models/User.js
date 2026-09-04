@@ -56,6 +56,17 @@ const userSchema = new mongoose.Schema({
     trim: true,
     default: ''
   },
+  // Telefones de contato da loja — saem impressos no cupom
+  telefoneLoja1: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  telefoneLoja2: {
+    type: String,
+    trim: true,
+    default: ''
+  },
   taxaPrazo: {
     type: Number,
     default: 0,

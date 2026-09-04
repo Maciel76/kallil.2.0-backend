@@ -30,6 +30,11 @@ router.get("/:vendaId", async (req, res) => {
       fiado: "Fiado/Prazo",
     };
 
+    // Telefones da loja: mostra os dois separados por " / " quando houver
+    const telefonesLoja = [user.telefoneLoja1, user.telefoneLoja2]
+      .filter((t) => t && t.trim())
+      .join(" / ");
+
     let itensHTML = "";
     for (const item of venda.itens) {
       itensHTML += `
@@ -88,6 +93,7 @@ router.get("/:vendaId", async (req, res) => {
     ${user.cnpj ? `<div class="info">CNPJ: ${user.cnpj}</div>` : ""}
     ${user.endereco ? `<div class="info">${user.endereco}</div>` : ""}
     ${user.cidade ? `<div class="info">${user.cidade}${user.estado ? " - " + user.estado : ""}</div>` : ""}
+    ${telefonesLoja ? `<div class="info">Tel: ${telefonesLoja}</div>` : ""}
   </div>
 
   <div class="divider"></div>
@@ -125,9 +131,21 @@ router.get("/:vendaId", async (req, res) => {
 
   <div class="divider"></div>
 
+  ${
+    venda.pagamentos && venda.pagamentos.length > 0
+      ? venda.pagamentos
+          .map(
+            (p) => `
+  <div class="row">
+    <span>${labelPagamento[p.forma] || p.forma}:</span><span>R$ ${p.valor.toFixed(2)}</span>
+  </div>`,
+          )
+          .join("")
+      : `
   <div class="row">
     <span>Pagamento:</span><span>${labelPagamento[venda.formaPagamento] || venda.formaPagamento}</span>
-  </div>
+  </div>`
+  }
   ${
     venda.formaPagamento === "dinheiro" && venda.valorRecebido > 0
       ? `

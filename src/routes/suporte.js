@@ -1,28 +1,46 @@
 const express = require('express')
 const router = express.Router()
 const auth = require('../middleware/auth')
-const { authorize } = require('../middleware/auth')
 const User = require('../models/User')
 const SuporteTicket = require('../models/SuporteTicket')
 const { notifySupportMessage } = require('../services/whatsappNotifications')
 
+// Dono e operador usam o suporte, cada um com as próprias conversas: o ticket
+// pertence a quem está logado de verdade (req.userRealId), não à conta do dono.
 router.use(auth)
-router.use(authorize('dono'))
 
 const limparTexto = (valor = '') => valor.trim().replace(/\s+/g, ' ')
 
-const carregarPerfilUsuario = async (userId) => {
-  return User.findById(userId).select('nome email nomeNegocio')
+// Identidade de quem escreve. O operador assina com o próprio nome e e-mail,
+// mas herda o nome do negócio do dono para o admin saber de qual loja veio.
+const carregarIdentidade = async (req) => {
+  const autor = await User.findById(req.userRealId).select('nome email nomeNegocio')
+  if (!autor) return null
+
+  const ehOperador = req.userRole === 'operador'
+  let nomeNegocio = autor.nomeNegocio || ''
+
+  if (ehOperador && String(req.userId) !== String(req.userRealId)) {
+    const dono = await User.findById(req.userId).select('nomeNegocio')
+    nomeNegocio = dono?.nomeNegocio || nomeNegocio
+  }
+
+  return {
+    nome: autor.nome,
+    email: autor.email,
+    nomeNegocio,
+    autorNome: ehOperador ? `${autor.nome} (operador)` : autor.nome
+  }
 }
 
 router.get('/conversas', async (req, res) => {
   try {
     await SuporteTicket.updateMany(
-      { userId: req.userId, naoLidasUsuario: { $gt: 0 } },
+      { userId: req.userRealId, naoLidasUsuario: { $gt: 0 } },
       { $set: { naoLidasUsuario: 0 } }
     )
 
-    const conversas = await SuporteTicket.find({ userId: req.userId })
+    const conversas = await SuporteTicket.find({ userId: req.userRealId })
       .sort({ ultimaMensagemEm: -1 })
       .lean()
 
@@ -45,13 +63,15 @@ router.post('/conversas', async (req, res) => {
       return res.status(400).json({ message: 'Descreva sua dúvida com pelo menos 5 caracteres.' })
     }
 
-    const usuario = await carregarPerfilUsuario(req.userId)
+    const usuario = await carregarIdentidade(req)
     if (!usuario) {
       return res.status(404).json({ message: 'Usuário não encontrado.' })
     }
 
+    const nomeAutor = usuario.autorNome
+
     const ticket = await SuporteTicket.create({
-      userId: req.userId,
+      userId: req.userRealId,
       userNome: usuario.nome,
       userEmail: usuario.email,
       nomeNegocio: usuario.nomeNegocio || '',
@@ -62,7 +82,7 @@ router.post('/conversas', async (req, res) => {
       mensagens: [
         {
           autorTipo: 'usuario',
-          autorNome: usuario.nome,
+          autorNome: nomeAutor,
           texto: mensagem
         }
       ]
@@ -73,7 +93,7 @@ router.post('/conversas', async (req, res) => {
       const whatsappRoutes = require('./whatsapp')
       const getActiveSessions = whatsappRoutes.getActiveSessions
       notifySupportMessage({
-        nome: usuario.nome,
+        nome: nomeAutor,
         email: usuario.email,
         nomeNegocio: usuario.nomeNegocio,
         assunto,
@@ -98,15 +118,17 @@ router.post('/conversas/:id/mensagens', async (req, res) => {
       return res.status(400).json({ message: 'Digite uma mensagem válida.' })
     }
 
-    const ticket = await SuporteTicket.findOne({ _id: req.params.id, userId: req.userId })
+    const ticket = await SuporteTicket.findOne({ _id: req.params.id, userId: req.userRealId })
     if (!ticket) {
       return res.status(404).json({ message: 'Conversa não encontrada.' })
     }
 
-    const usuario = await carregarPerfilUsuario(req.userId)
+    const usuario = await carregarIdentidade(req)
     if (!usuario) {
       return res.status(404).json({ message: 'Usuário não encontrado.' })
     }
+
+    const nomeAutor = usuario.autorNome
 
     ticket.userNome = usuario.nome
     ticket.userEmail = usuario.email
@@ -116,7 +138,7 @@ router.post('/conversas/:id/mensagens', async (req, res) => {
     ticket.ultimaMensagemEm = new Date()
     ticket.mensagens.push({
       autorTipo: 'usuario',
-      autorNome: usuario.nome,
+      autorNome: nomeAutor,
       texto: mensagem
     })
 
@@ -127,7 +149,7 @@ router.post('/conversas/:id/mensagens', async (req, res) => {
       const whatsappRoutes = require('./whatsapp')
       const getActiveSessions = whatsappRoutes.getActiveSessions
       notifySupportMessage({
-        nome: usuario.nome,
+        nome: nomeAutor,
         email: usuario.email,
         nomeNegocio: usuario.nomeNegocio,
         assunto: ticket.assunto,

@@ -55,6 +55,22 @@ const vendaSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  // Pagamento dividido: uma entrada por forma usada na venda.
+  // Fica vazio quando a venda foi paga de uma vez só.
+  pagamentos: {
+    type: [{
+      forma: {
+        type: String,
+        enum: ['dinheiro', 'pix', 'debito', 'credito'],
+        required: true
+      },
+      valor: { type: Number, required: true, min: 0 },
+      valorRecebido: { type: Number, default: 0 },
+      troco: { type: Number, default: 0 },
+      _id: false
+    }],
+    default: []
+  },
   status: {
     type: String,
     enum: ['pago', 'fiado', 'cancelado', 'espera'],
