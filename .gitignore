@@ -23,3 +23,6 @@ dist-ssr
 *.sln
 *.sw?
 .env
+
+# Chave de cifra das credenciais do Mercado Pago (gerada automaticamente)
+.encryption-key

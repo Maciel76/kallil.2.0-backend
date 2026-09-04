@@ -56,6 +56,54 @@ const userSchema = new mongoose.Schema({
     trim: true,
     default: ''
   },
+  // === Mercado Pago do lojista (PIX no PDV) ===
+  // O token é credencial: fica fora das consultas por padrão (select: false)
+  mpAccessToken: {
+    type: String,
+    default: '',
+    select: false
+  },
+  mpAtivo: {
+    type: Boolean,
+    default: false
+  },
+  mpConta: {
+    type: String,
+    default: ''
+  },
+  mpAtualizadoEm: {
+    type: Date,
+    default: null
+  },
+  // Public Key da mesma aplicação do Mercado Pago. Não é segredo (ela roda
+  // no navegador do cliente), então fica em texto puro e sem select: false.
+  mpPublicKey: {
+    type: String,
+    default: '',
+    trim: true
+  },
+  // Assinatura secreta do webhook — quem gera é o Mercado Pago, no painel
+  // dele. O lojista cola aqui e nós validamos o header x-signature com ela.
+  mpWebhookSecret: {
+    type: String,
+    default: '',
+    select: false
+  },
+  mpWebhookUltimoEvento: {
+    type: Date,
+    default: null
+  },
+  mpWebhookEventos: {
+    type: Number,
+    default: 0
+  },
+  // Chamadas recusadas por assinatura inválida — se esse número sobe sozinho,
+  // a assinatura colada não é a mesma que o Mercado Pago está usando.
+  mpWebhookRecusados: {
+    type: Number,
+    default: 0
+  },
+
   // Telefones de contato da loja — saem impressos no cupom
   telefoneLoja1: {
     type: String,
