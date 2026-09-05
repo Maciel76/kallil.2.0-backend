@@ -21,6 +21,15 @@ const pagamentoSchema = new mongoose.Schema({
     enum: ['pago', 'whatsapp'],
     default: 'pago'
   },
+  // Plano do catálogo escolhido no checkout
+  planoSlug: {
+    type: String,
+    default: ''
+  },
+  planoNome: {
+    type: String,
+    default: ''
+  },
   meses: {
     type: Number,
     required: true,

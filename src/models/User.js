@@ -194,6 +194,11 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  // Slug do plano do catálogo contratado (vazio = plano pago padrão)
+  planoSlug: {
+    type: String,
+    default: ''
+  },
   // === Add-on Automação WhatsApp ===
   planoWhatsapp: {
     type: Boolean,

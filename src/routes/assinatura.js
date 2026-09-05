@@ -32,11 +32,29 @@ router.get('/meu-plano', auth, async (req, res) => {
       await removerDespesaAssinatura(user._id)
     }
 
+    // Plano do catálogo contratado — define os limites quando existir
+    const planoContratado = user.planoSlug
+      ? config.planos.find(p => p.slug === user.planoSlug)
+      : null
+
+    const limitesPagos = planoContratado
+      ? {
+          maxProdutos: planoContratado.limites.maxProdutos,
+          maxVendasMes: planoContratado.limites.maxVendasMes,
+          maxOperadores: planoContratado.limites.maxOperadores,
+          maxCaixas: planoContratado.limites.maxCaixas,
+          maxClientes: planoContratado.limites.maxClientes,
+          relatoriosAvancados: planoContratado.recursos.relatoriosAvancados,
+          personalizacaoPDV: planoContratado.recursos.personalizacaoPDV,
+          suportePrioritario: planoContratado.recursos.suportePrioritario
+        }
+      : config.pago
+
     // WhatsApp ativo → limites do plano pago (superior)
     const whatsappAtivoAgora = !!(user.planoWhatsapp && user.whatsappAssinaturaExpira && user.whatsappAssinaturaExpira > agora)
     const limites = whatsappAtivoAgora || (user.plano === 'pago' && user.assinaturaStatus === 'ativo')
-      ? config.pago
-      : (user.assinaturaStatus === 'teste' && user.testeExpira > agora ? config.pago : config.gratuito)
+      ? limitesPagos
+      : (user.assinaturaStatus === 'teste' && user.testeExpira > agora ? limitesPagos : config.gratuito)
 
     // Verifica e desativa plano whatsapp se expirado
     if (user.planoWhatsapp && user.whatsappAssinaturaExpira && user.whatsappAssinaturaExpira < agora) {
@@ -46,6 +64,8 @@ router.get('/meu-plano', auth, async (req, res) => {
 
     res.json({
       plano: user.plano,
+      planoSlug: user.planoSlug || (user.plano === 'pago' ? 'pago' : 'gratuito'),
+      planoNome: planoContratado ? planoContratado.nome : config.pago.nome,
       status: user.assinaturaStatus,
       assinaturaInicio: user.assinaturaInicio,
       assinaturaExpira: user.assinaturaExpira,
@@ -65,13 +85,15 @@ router.get('/meu-plano', auth, async (req, res) => {
       },
       planoProf: {
         nome: config.pago.nome,
-        valorMensal: config.pago.valorMensal
+        valorMensal: config.pago.valorMensal,
+        ativo: (config.planos.find(p => p.slug === 'pago') || {}).ativo !== false
       },
       planoWhatsappInfo: {
         nome: config.whatsapp?.nome || 'Automação WhatsApp',
         valorMensal: config.whatsapp?.valorMensal || 89.90,
         ativo: config.whatsapp?.ativo !== false
-      }
+      },
+      planosDisponiveis: config.planos.filter(p => p.ativo).sort((a, b) => a.ordem - b.ordem)
     })
   } catch (error) {
     res.status(500).json({ message: 'Erro ao buscar plano.' })
@@ -137,10 +159,156 @@ router.put('/config', auth, authorize('admin'), async (req, res) => {
       if (whatsapp.cobrarClientes !== undefined) config.whatsapp.cobrarClientes = whatsapp.cobrarClientes
     }
 
+    PlanoConfig.sincronizarCatalogo(config)
     await config.save()
     res.json(config)
   } catch (error) {
     res.status(500).json({ message: 'Erro ao atualizar configuração.' })
+  }
+})
+
+
+// =======================================
+// CATÁLOGO DE PLANOS (admin)
+// =======================================
+
+const CAMPOS_LIMITES = ['maxProdutos', 'maxVendasMes', 'maxOperadores', 'maxClientes', 'maxCaixas']
+const CAMPOS_RECURSOS = ['relatoriosAvancados', 'personalizacaoPDV', 'suportePrioritario', 'automacaoWhatsapp']
+
+const gerarSlug = (texto) => String(texto || '')
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase().trim()
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-+|-+$/g, '')
+
+const aplicarDadosPlano = (plano, body) => {
+  if (body.nome !== undefined) plano.nome = String(body.nome).trim()
+  if (body.descricao !== undefined) plano.descricao = String(body.descricao).trim()
+  if (body.tipo !== undefined && ['base', 'addon'].includes(body.tipo)) plano.tipo = body.tipo
+  if (body.valorMensal !== undefined) plano.valorMensal = Math.max(0, Number(body.valorMensal) || 0)
+  if (body.valorAnual !== undefined) plano.valorAnual = Math.max(0, Number(body.valorAnual) || 0)
+  if (body.destaque !== undefined) plano.destaque = !!body.destaque
+  if (body.ativo !== undefined) plano.ativo = !!body.ativo
+  if (body.cor !== undefined) plano.cor = body.cor
+  if (body.icone !== undefined) plano.icone = body.icone
+  if (body.ordem !== undefined) plano.ordem = Number(body.ordem) || 0
+  if (Array.isArray(body.beneficios)) {
+    plano.beneficios = body.beneficios.map(b => String(b).trim()).filter(Boolean)
+  }
+  if (body.limites) {
+    CAMPOS_LIMITES.forEach(campo => {
+      if (body.limites[campo] !== undefined) {
+        plano.limites[campo] = Math.max(0, Number(body.limites[campo]) || 0)
+      }
+    })
+  }
+  if (body.recursos) {
+    CAMPOS_RECURSOS.forEach(campo => {
+      if (body.recursos[campo] !== undefined) plano.recursos[campo] = !!body.recursos[campo]
+    })
+  }
+}
+
+// GET /api/assinatura/planos — planos ativos do catálogo (qualquer usuário autenticado)
+router.get('/planos', auth, async (req, res) => {
+  try {
+    const config = await PlanoConfig.getConfig()
+    const planos = config.planos
+      .filter(p => p.ativo)
+      .sort((a, b) => a.ordem - b.ordem)
+    res.json({ planos, diasTeste: config.diasTeste })
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao buscar planos.' })
+  }
+})
+
+// POST /api/assinatura/config/planos — criar plano (admin)
+router.post('/config/planos', auth, authorize('admin'), async (req, res) => {
+  try {
+    const nome = String(req.body.nome || '').trim()
+    if (!nome) return res.status(400).json({ message: 'Informe o nome do plano.' })
+
+    const config = await PlanoConfig.getConfig()
+    const slugBase = gerarSlug(req.body.slug || nome) || 'plano'
+    let slug = slugBase
+    let contador = 2
+    while (config.planos.some(p => p.slug === slug)) {
+      slug = `${slugBase}-${contador++}`
+    }
+
+    const maiorOrdem = config.planos.reduce((max, p) => Math.max(max, p.ordem || 0), -1)
+    const plano = config.planos.create({
+      slug,
+      nome,
+      ordem: maiorOrdem + 1,
+      ativo: req.body.ativo !== undefined ? !!req.body.ativo : true,
+      sistema: false
+    })
+    aplicarDadosPlano(plano, req.body)
+    plano.slug = slug
+    plano.sistema = false
+    config.planos.push(plano)
+
+    await config.save()
+    res.status(201).json(plano)
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao criar plano.' })
+  }
+})
+
+// PUT /api/assinatura/config/planos/:planoId — atualizar plano (admin)
+router.put('/config/planos/:planoId', auth, authorize('admin'), async (req, res) => {
+  try {
+    const config = await PlanoConfig.getConfig()
+    const plano = config.planos.id(req.params.planoId)
+    if (!plano) return res.status(404).json({ message: 'Plano não encontrado.' })
+
+    if (req.body.nome !== undefined && !String(req.body.nome).trim()) {
+      return res.status(400).json({ message: 'Informe o nome do plano.' })
+    }
+
+    aplicarDadosPlano(plano, req.body)
+    PlanoConfig.sincronizarLegado(config, plano)
+
+    await config.save()
+    res.json(plano)
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao atualizar plano.' })
+  }
+})
+
+// PATCH /api/assinatura/config/planos/:planoId/ativo — ativar/desativar plano (admin)
+router.patch('/config/planos/:planoId/ativo', auth, authorize('admin'), async (req, res) => {
+  try {
+    const config = await PlanoConfig.getConfig()
+    const plano = config.planos.id(req.params.planoId)
+    if (!plano) return res.status(404).json({ message: 'Plano não encontrado.' })
+
+    plano.ativo = req.body.ativo !== undefined ? !!req.body.ativo : !plano.ativo
+    PlanoConfig.sincronizarLegado(config, plano)
+
+    await config.save()
+    res.json(plano)
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao alterar status do plano.' })
+  }
+})
+
+// DELETE /api/assinatura/config/planos/:planoId — excluir plano (admin)
+router.delete('/config/planos/:planoId', auth, authorize('admin'), async (req, res) => {
+  try {
+    const config = await PlanoConfig.getConfig()
+    const plano = config.planos.id(req.params.planoId)
+    if (!plano) return res.status(404).json({ message: 'Plano não encontrado.' })
+    if (plano.sistema) {
+      return res.status(400).json({ message: 'Planos do sistema não podem ser excluídos — desative-o.' })
+    }
+
+    plano.deleteOne()
+    await config.save()
+    res.json({ message: 'Plano excluído.' })
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao excluir plano.' })
   }
 })
 

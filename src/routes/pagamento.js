@@ -20,8 +20,7 @@ const mpClient = new MercadoPagoConfig({
 // =============================================
 router.post('/pix', auth, async (req, res) => {
   try {
-    const { meses, cpf, tipo } = req.body
-    const tipoPlano = tipo === 'whatsapp' ? 'whatsapp' : 'pago'
+    const { meses, cpf, tipo, planoId } = req.body
     if (!meses || ![1, 3, 6, 12].includes(Number(meses))) {
       return res.status(400).json({ message: 'Período inválido. Escolha 1, 3, 6 ou 12 meses.' })
     }
@@ -35,9 +34,31 @@ router.post('/pix', auth, async (req, res) => {
       return res.status(403).json({ message: 'Apenas donos podem assinar planos.' })
     }
 
+    const config = await PlanoConfig.getConfig()
+
+    // Plano escolhido no catálogo (quando o checkout informa planoId)
+    let planoCatalogo = null
+    if (planoId) {
+      planoCatalogo = config.planos.id(planoId) || config.planos.find(p => p.slug === planoId)
+      if (!planoCatalogo) return res.status(404).json({ message: 'Plano não encontrado.' })
+      if (!planoCatalogo.ativo) {
+        return res.status(400).json({ message: 'Este plano não está disponível para contratação.' })
+      }
+      if (!(planoCatalogo.valorMensal > 0)) {
+        return res.status(400).json({ message: 'Este plano é gratuito e não passa pelo checkout.' })
+      }
+    }
+
+    const tipoPlano = planoCatalogo
+      ? (planoCatalogo.tipo === 'addon' ? 'whatsapp' : 'pago')
+      : (tipo === 'whatsapp' ? 'whatsapp' : 'pago')
+
     // Já tem plano ativo?
     if (tipoPlano === 'pago') {
-      if (user.plano === 'pago' && user.assinaturaStatus === 'ativo' && user.assinaturaExpira > new Date()) {
+      const slugAtual = user.planoSlug || 'pago'
+      const mesmoPlano = !planoCatalogo || slugAtual === planoCatalogo.slug
+      const assinaturaVigente = user.plano === 'pago' && user.assinaturaStatus === 'ativo' && user.assinaturaExpira > new Date()
+      if (mesmoPlano && assinaturaVigente) {
         return res.status(400).json({ message: 'Você já possui um plano ativo.' })
       }
     } else if (tipoPlano === 'whatsapp') {
@@ -46,9 +67,13 @@ router.post('/pix', auth, async (req, res) => {
       }
     }
 
-    const config = await PlanoConfig.getConfig()
-    const planoNome = tipoPlano === 'whatsapp' ? (config.whatsapp?.nome || 'Automação WhatsApp') : config.pago.nome
-    const valorMensal = tipoPlano === 'whatsapp' ? (config.whatsapp?.valorMensal || 89.90) : config.pago.valorMensal
+    const planoNome = planoCatalogo
+      ? planoCatalogo.nome
+      : (tipoPlano === 'whatsapp' ? (config.whatsapp?.nome || 'Automação WhatsApp') : config.pago.nome)
+    const valorMensal = planoCatalogo
+      ? planoCatalogo.valorMensal
+      : (tipoPlano === 'whatsapp' ? (config.whatsapp?.valorMensal || 89.90) : config.pago.valorMensal)
+    const planoSlug = planoCatalogo ? planoCatalogo.slug : (tipoPlano === 'whatsapp' ? 'whatsapp' : 'pago')
 
     // Calcular valor com desconto
     const descontos = { 1: 0, 3: 0.05, 6: 0.10, 12: 0.20 }
@@ -59,6 +84,8 @@ router.post('/pix', auth, async (req, res) => {
     const pagamento = await Pagamento.create({
       userId: user._id,
       plano: tipoPlano,
+      planoSlug,
+      planoNome,
       meses: Number(meses),
       valorTotal,
       status: 'pendente'
@@ -247,7 +274,7 @@ async function processarPagamento(mpPaymentId) {
       if (pagamento.plano === 'whatsapp') {
         await ativarPlanoWhatsapp(pagamento.userId, pagamento.meses)
       } else {
-        await ativarPlano(pagamento.userId, pagamento.meses)
+        await ativarPlano(pagamento.userId, pagamento.meses, pagamento.planoSlug)
       }
     }
   } catch (error) {
@@ -258,7 +285,7 @@ async function processarPagamento(mpPaymentId) {
 // =============================================
 // Função auxiliar: ativar plano do usuário
 // =============================================
-async function ativarPlano(userId, meses) {
+async function ativarPlano(userId, meses, planoSlug) {
   const user = await User.findById(userId)
   if (!user) return
 
@@ -268,6 +295,7 @@ async function ativarPlano(userId, meses) {
     : new Date()
 
   user.plano = 'pago'
+  user.planoSlug = planoSlug || 'pago'
   user.assinaturaStatus = 'ativo'
   if (!user.assinaturaInicio) user.assinaturaInicio = new Date()
   user.assinaturaExpira = new Date(base.getTime() + meses * 30 * 24 * 60 * 60 * 1000)
@@ -275,9 +303,10 @@ async function ativarPlano(userId, meses) {
 
   // Manter a cobrança mensal de assinatura como despesa fixa do negócio
   const config = await PlanoConfig.getConfig()
+  const planoContratado = config.planos.find(p => p.slug === (planoSlug || 'pago'))
   await sincronizarDespesaAssinatura(userId, {
-    nomePlano: config.pago.nome,
-    valorMensal: config.pago.valorMensal,
+    nomePlano: planoContratado ? planoContratado.nome : config.pago.nome,
+    valorMensal: planoContratado ? planoContratado.valorMensal : config.pago.valorMensal,
     dataReferencia: new Date()
   })
 
