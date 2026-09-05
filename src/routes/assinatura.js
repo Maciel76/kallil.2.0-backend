@@ -6,6 +6,7 @@ const auth = require('../middleware/auth')
 const { authorize } = require('../middleware/auth')
 const { sincronizarDespesaAssinatura, removerDespesaAssinatura } = require('../utils/assinaturaDespesa')
 const { notifyPlanUpgrade, notifyPlanRenewal } = require('../services/whatsappNotifications')
+const { resolverRecursosPlano } = require('../middleware/assinatura')
 
 // =======================================
 // ROTAS PÚBLICAS (usuário autenticado)
@@ -62,6 +63,12 @@ router.get('/meu-plano', auth, async (req, res) => {
       await user.save()
     }
 
+    // Operadores herdam o plano do dono
+    const donoDoPlano = user.role === 'operador' && user.donoId
+      ? (await User.findById(user.donoId)) || user
+      : user
+    const recursosPlano = await resolverRecursosPlano(donoDoPlano)
+
     res.json({
       plano: user.plano,
       planoSlug: user.planoSlug || (user.plano === 'pago' ? 'pago' : 'gratuito'),
@@ -93,6 +100,8 @@ router.get('/meu-plano', auth, async (req, res) => {
         valorMensal: config.whatsapp?.valorMensal || 89.90,
         ativo: config.whatsapp?.ativo !== false
       },
+      // Recursos liberados pelo plano contratado somados aos add-ons ativos
+      recursos: recursosPlano,
       planosDisponiveis: config.planos.filter(p => p.ativo).sort((a, b) => a.ordem - b.ordem)
     })
   } catch (error) {
@@ -173,7 +182,7 @@ router.put('/config', auth, authorize('admin'), async (req, res) => {
 // =======================================
 
 const CAMPOS_LIMITES = ['maxProdutos', 'maxVendasMes', 'maxOperadores', 'maxClientes', 'maxCaixas']
-const CAMPOS_RECURSOS = ['relatoriosAvancados', 'personalizacaoPDV', 'suportePrioritario', 'automacaoWhatsapp']
+const CAMPOS_RECURSOS = ['relatoriosAvancados', 'personalizacaoPDV', 'suportePrioritario', 'automacaoWhatsapp', 'pagamentoPix']
 
 const gerarSlug = (texto) => String(texto || '')
   .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -345,11 +354,13 @@ router.get('/admin/resumo', auth, authorize('admin'), async (req, res) => {
 // GET /api/assinatura/admin/usuarios — listar usuários com info de assinatura (admin)
 router.get('/admin/usuarios', auth, authorize('admin'), async (req, res) => {
   try {
-    const { busca, plano, status, page = 1, limit = 20 } = req.query
+    const { busca, plano, status, excluirTeste, page = 1, limit = 20 } = req.query
     const filtro = { role: 'dono' }
 
     if (plano && ['gratuito', 'pago'].includes(plano)) filtro.plano = plano
     if (status && ['ativo', 'teste', 'expirado', 'cancelado'].includes(status)) filtro.assinaturaStatus = status
+    // Usado pelo card "Plano gratuito" do painel admin, que nao conta quem esta em teste
+    else if (excluirTeste === '1' || excluirTeste === 'true') filtro.assinaturaStatus = { $ne: 'teste' }
 
     if (busca) {
       const escapedBusca = busca.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -373,6 +384,7 @@ router.get('/admin/usuarios', auth, authorize('admin'), async (req, res) => {
       email: u.email,
       nomeNegocio: u.nomeNegocio,
       plano: u.plano,
+      planoSlug: u.planoSlug,
       assinaturaStatus: u.assinaturaStatus,
       assinaturaInicio: u.assinaturaInicio,
       assinaturaExpira: u.assinaturaExpira,
@@ -397,16 +409,33 @@ router.patch('/admin/usuarios/:id', auth, authorize('admin'), async (req, res) =
       return res.status(404).json({ message: 'Usuário não encontrado.' })
     }
 
-    const { plano, meses } = req.body
+    const { plano, planoSlug, meses } = req.body
+
+    const config = await PlanoConfig.getConfig()
+    // Plano escolhido no catálogo da aba "Planos e Preços" (admin)
+    let planoCatalogo = null
+    if (plano === 'pago' && planoSlug) {
+      planoCatalogo = (config.planos || []).find(
+        p => p.slug === planoSlug && p.tipo === 'base' && p.slug !== 'gratuito'
+      )
+      if (!planoCatalogo) {
+        return res.status(400).json({ message: 'Plano não encontrado no catálogo.' })
+      }
+      if (!planoCatalogo.ativo) {
+        return res.status(400).json({ message: 'Este plano está desativado no catálogo.' })
+      }
+    }
 
     if (plano === 'pago') {
       const duracao = parseInt(meses) || 1
       user.plano = 'pago'
+      user.planoSlug = planoCatalogo ? planoCatalogo.slug : ''
       user.assinaturaStatus = 'ativo'
       user.assinaturaInicio = new Date()
       user.assinaturaExpira = new Date(Date.now() + duracao * 30 * 24 * 60 * 60 * 1000)
     } else if (plano === 'gratuito') {
       user.plano = 'gratuito'
+      user.planoSlug = ''
       user.assinaturaStatus = 'expirado'
       user.assinaturaExpira = null
       user.assinaturaInicio = null
@@ -415,10 +444,9 @@ router.patch('/admin/usuarios/:id', auth, authorize('admin'), async (req, res) =
     await user.save()
 
     if (plano === 'pago') {
-      const config = await PlanoConfig.getConfig()
       await sincronizarDespesaAssinatura(user._id, {
-        nomePlano: config.pago.nome,
-        valorMensal: config.pago.valorMensal,
+        nomePlano: planoCatalogo ? planoCatalogo.nome : config.pago.nome,
+        valorMensal: planoCatalogo ? planoCatalogo.valorMensal : config.pago.valorMensal,
         dataReferencia: new Date()
       })
     } else {
@@ -478,9 +506,13 @@ router.patch('/admin/usuarios/:id/renovar', auth, authorize('admin'), async (req
     await user.save()
 
     const config = await PlanoConfig.getConfig()
+    // Cobra pelo plano do catálogo que o usuário tem, com fallback no plano legado
+    const planoAtual = user.planoSlug
+      ? (config.planos || []).find(p => p.slug === user.planoSlug)
+      : null
     await sincronizarDespesaAssinatura(user._id, {
-      nomePlano: config.pago.nome,
-      valorMensal: config.pago.valorMensal,
+      nomePlano: planoAtual ? planoAtual.nome : config.pago.nome,
+      valorMensal: planoAtual ? planoAtual.valorMensal : config.pago.valorMensal,
       dataReferencia: new Date()
     })
 

@@ -133,4 +133,73 @@ const apenasPlanoProf = (funcionalidade) => {
   }
 }
 
-module.exports = { verificarAssinatura, verificarLimite, apenasPlanoProf }
+// Recursos efetivos do dono: os do plano base contratado, somados aos dos add-ons ativos
+const resolverRecursosPlano = async (dono) => {
+  const config = await PlanoConfig.getConfig()
+  const planos = config.planos || []
+  const agora = new Date()
+
+  const combinar = (destino, plano) => {
+    if (!plano || !plano.recursos) return destino
+    Object.keys(plano.recursos.toObject ? plano.recursos.toObject() : plano.recursos)
+      .forEach(chave => { if (plano.recursos[chave]) destino[chave] = true })
+    return destino
+  }
+
+  const recursos = {}
+  const emTeste = dono.assinaturaStatus === 'teste' && dono.testeExpira && dono.testeExpira > agora
+  const pagoAtivo = dono.plano === 'pago' && dono.assinaturaStatus === 'ativo' &&
+    (!dono.assinaturaExpira || dono.assinaturaExpira > agora)
+
+  if (pagoAtivo) {
+    // Durante o teste vale o plano padrão pago; depois, o plano realmente contratado
+    combinar(recursos, planos.find(p => p.slug === (dono.planoSlug || 'pago')))
+  } else if (emTeste) {
+    combinar(recursos, planos.find(p => p.slug === 'pago'))
+  } else {
+    combinar(recursos, planos.find(p => p.slug === 'gratuito'))
+  }
+
+  const whatsappAtivo = !!(dono.planoWhatsapp && dono.whatsappAssinaturaExpira && dono.whatsappAssinaturaExpira > agora)
+  if (whatsappAtivo) combinar(recursos, planos.find(p => p.slug === 'whatsapp'))
+
+  return recursos
+}
+
+// Middleware que exige um recurso marcado no plano (aba Planos e Preços do admin)
+const exigirRecursoPlano = (chave, funcionalidade) => {
+  return async (req, res, next) => {
+    try {
+      const user = await User.findById(req.userId)
+      if (!user) return res.status(401).json({ message: 'Usuário não encontrado.' })
+      if (user.role === 'admin') return next()
+
+      // Operadores herdam o plano do dono
+      const dono = user.role === 'operador' && user.donoId ? await User.findById(user.donoId) : user
+      if (!dono) return res.status(401).json({ message: 'Negócio não encontrado.' })
+
+      const recursos = await resolverRecursosPlano(dono)
+      if (recursos[chave]) {
+        req.recursosPlano = recursos
+        return next()
+      }
+
+      return res.status(403).json({
+        message: `"${funcionalidade}" não está incluído no seu plano. Fale com o suporte ou faça upgrade para liberar.`,
+        planoNecessario: true,
+        recurso: chave,
+        funcionalidade
+      })
+    } catch (error) {
+      return res.status(500).json({ message: 'Erro ao verificar o plano.' })
+    }
+  }
+}
+
+module.exports = {
+  verificarAssinatura,
+  verificarLimite,
+  apenasPlanoProf,
+  resolverRecursosPlano,
+  exigirRecursoPlano
+}

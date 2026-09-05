@@ -11,6 +11,10 @@ const mp = require('../services/mercadoPago')
 const tokenCache = require('../services/mpTokenCache')
 const pixWebhook = require('../services/pixWebhook')
 const { montarUrlWebhook, basePublica } = require('../utils/webhookUrl')
+const { resolverRecursosPlano, exigirRecursoPlano } = require('../middleware/assinatura')
+
+// A tela de Pagamento só existe para quem tem o recurso marcado no plano
+const exigirPix = exigirRecursoPlano('pagamentoPix', 'Pagamento PIX automatizado')
 
 // =============================================
 // POST /api/pagamento-loja/webhook/:userId — aviso do Mercado Pago
@@ -96,7 +100,16 @@ router.get('/config', async (req, res) => {
       .lean()
     if (!user) return res.status(404).json({ message: 'Usuário não encontrado.' })
 
-    res.json(montarEstado(user))
+    // Operadores herdam o plano do dono
+    const dono = user.role === 'operador' && user.donoId
+      ? await User.findById(user.donoId).lean()
+      : user
+    const recursos = dono ? await resolverRecursosPlano(dono) : {}
+
+    res.json({
+      ...montarEstado(user),
+      recursoLiberado: user.role === 'admin' || !!recursos.pagamentoPix
+    })
   } catch (error) {
     res.status(500).json({ message: 'Erro ao carregar configuração de pagamento.' })
   }
@@ -105,7 +118,7 @@ router.get('/config', async (req, res) => {
 // =============================================
 // PUT /api/pagamento-loja/config — salvar credenciais / ligar e desligar
 // =============================================
-router.put('/config', authorize('dono'), async (req, res) => {
+router.put('/config', authorize('dono'), exigirPix, async (req, res) => {
   try {
     const { accessToken, ativo, publicKey, webhookSecret } = req.body
 
@@ -192,7 +205,7 @@ router.put('/config', authorize('dono'), async (req, res) => {
 // =============================================
 // POST /api/pagamento-loja/config/testar — conferir a conexão sem salvar nada
 // =============================================
-router.post('/config/testar', authorize('dono'), async (req, res) => {
+router.post('/config/testar', authorize('dono'), exigirPix, async (req, res) => {
   try {
     const user = await User.findById(req.userId).select('+mpAccessToken').lean()
     const token = user?.mpAccessToken ? decryptToken(user.mpAccessToken) : ''
@@ -215,7 +228,7 @@ router.post('/config/testar', authorize('dono'), async (req, res) => {
 // =============================================
 // DELETE /api/pagamento-loja/config — remover credenciais
 // =============================================
-router.delete('/config', authorize('dono'), async (req, res) => {
+router.delete('/config', authorize('dono'), exigirPix, async (req, res) => {
   try {
     const user = await User.findById(req.userId).select('+mpAccessToken +mpWebhookSecret')
     if (!user) return res.status(404).json({ message: 'Usuário não encontrado.' })
@@ -238,7 +251,7 @@ router.delete('/config', authorize('dono'), async (req, res) => {
 // =============================================
 // POST /api/pagamento-loja/pix — cobrar uma venda por PIX
 // =============================================
-router.post('/pix', async (req, res) => {
+router.post('/pix', exigirPix, async (req, res) => {
   try {
     const valor = Number(req.body.valor)
     if (!Number.isFinite(valor) || valor <= 0) {

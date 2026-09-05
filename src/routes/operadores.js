@@ -5,6 +5,50 @@ const User = require('../models/User')
 const auth = require('../middleware/auth')
 const { authorize } = require('../middleware/auth')
 const { verificarAssinatura } = require('../middleware/assinatura')
+const PlanoConfig = require('../models/PlanoConfig')
+
+// Quantos operadores o plano contratado permite.
+// Nos planos pagos, 0 significa ilimitado (é o que o painel admin informa);
+// no gratuito, 0 continua significando "nenhum operador", como sempre foi.
+const resolverLimiteOperadores = async (dono, planoAtual) => {
+  const config = await PlanoConfig.getConfig()
+
+  if (planoAtual !== 'pago') {
+    return {
+      limite: Number(config.gratuito.maxOperadores) || 0,
+      ilimitado: false,
+      nomePlano: 'gratuito'
+    }
+  }
+
+  const plano = (config.planos || []).find(p => p.slug === (dono?.planoSlug || 'pago'))
+  const limite = Number(
+    plano?.limites?.maxOperadores !== undefined
+      ? plano.limites.maxOperadores
+      : config.pago.maxOperadores
+  ) || 0
+
+  return {
+    limite,
+    ilimitado: limite <= 0,
+    nomePlano: plano?.nome || config.pago.nome || 'Profissional'
+  }
+}
+
+// Uso atual + limite, na mesma regra que o POST aplica
+const montarUso = async (userId, planoAtual) => {
+  const dono = await User.findById(userId)
+  const { limite, ilimitado, nomePlano } = await resolverLimiteOperadores(dono, planoAtual)
+  const usados = await User.countDocuments({ donoId: userId, role: 'operador' })
+  return {
+    usados,
+    limite,
+    ilimitado,
+    nomePlano,
+    disponiveis: ilimitado ? null : Math.max(0, limite - usados),
+    limiteAtingido: !ilimitado && usados >= limite
+  }
+}
 
 const gerarToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
@@ -71,26 +115,30 @@ router.get('/', async (req, res) => {
   }
 })
 
+// GET /api/operadores/uso — vagas de operador no plano contratado
+router.get('/uso', async (req, res) => {
+  try {
+    res.json(await montarUso(req.userId, req.planoAtual))
+  } catch (error) {
+    res.status(500).json({ message: 'Erro ao consultar o limite do plano.' })
+  }
+})
+
 // POST /api/operadores — criar operador
 router.post('/', async (req, res) => {
   try {
-    // Verificar limite de operadores do plano
-    if (req.planoAtual !== 'pago') {
-      const PlanoConfig = require('../models/PlanoConfig')
-      const config = await PlanoConfig.getConfig()
-      const maxOp = config.gratuito.maxOperadores
-      if (maxOp >= 0) {
-        const totalOp = await User.countDocuments({ donoId: req.userId, role: 'operador' })
-        if (totalOp >= maxOp) {
-          return res.status(403).json({
-            message: 'Limite de operadores do plano gratuito atingido. Faça upgrade para o plano profissional.',
-            limiteAtingido: true,
-            recurso: 'operadores',
-            atual: totalOp,
-            limite: maxOp
-          })
-        }
-      }
+    // Verificar limite de operadores do plano contratado
+    const uso = await montarUso(req.userId, req.planoAtual)
+    if (uso.limiteAtingido) {
+      return res.status(403).json({
+        message: uso.limite === 0
+          ? `O plano ${uso.nomePlano} não inclui operadores. Faça upgrade para cadastrar.`
+          : `Limite de ${uso.limite} operador${uso.limite !== 1 ? 'es' : ''} do plano ${uso.nomePlano} atingido. Faça upgrade para cadastrar mais.`,
+        limiteAtingido: true,
+        recurso: 'operadores',
+        atual: uso.usados,
+        limite: uso.limite
+      })
     }
 
     const { nome, email, senha } = req.body

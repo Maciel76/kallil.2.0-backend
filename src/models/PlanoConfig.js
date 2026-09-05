@@ -26,7 +26,9 @@ const planoItemSchema = new mongoose.Schema({
     relatoriosAvancados: { type: Boolean, default: false },
     personalizacaoPDV: { type: Boolean, default: false },
     suportePrioritario: { type: Boolean, default: false },
-    automacaoWhatsapp: { type: Boolean, default: false }
+    automacaoWhatsapp: { type: Boolean, default: false },
+    // Libera a tela "Pagamento" (PIX automatizado via Mercado Pago)
+    pagamentoPix: { type: Boolean, default: false }
   },
   beneficios: { type: [String], default: [] }
 }, { timestamps: true })
@@ -72,7 +74,9 @@ const planoConfigSchema = new mongoose.Schema({
   // Catálogo de planos gerenciado pelo admin
   planos: { type: [planoItemSchema], default: [] },
   // Dias de teste grátis para novos usuários
-  diasTeste: { type: Number, default: 7 }
+  diasTeste: { type: Number, default: 7 },
+  // Marca de migração: liga pagamentoPix nos planos pagos que já existiam
+  migracaoPagamentoPix: { type: Boolean, default: false }
 }, { timestamps: true })
 
 // Catálogo inicial montado a partir dos planos legados do sistema
@@ -100,7 +104,8 @@ function montarPlanosPadrao (config) {
         relatoriosAvancados: config.gratuito.relatoriosAvancados,
         personalizacaoPDV: config.gratuito.personalizacaoPDV,
         suportePrioritario: config.gratuito.suportePrioritario,
-        automacaoWhatsapp: false
+        automacaoWhatsapp: false,
+        pagamentoPix: false
       }
     },
     {
@@ -126,7 +131,8 @@ function montarPlanosPadrao (config) {
         relatoriosAvancados: config.pago.relatoriosAvancados,
         personalizacaoPDV: config.pago.personalizacaoPDV,
         suportePrioritario: config.pago.suportePrioritario,
-        automacaoWhatsapp: false
+        automacaoWhatsapp: false,
+        pagamentoPix: true
       }
     },
     {
@@ -185,7 +191,11 @@ planoConfigSchema.statics.sincronizarCatalogo = function (config) {
   const aplicar = (slug, dados) => {
     const plano = (config.planos || []).find(p => p.slug === slug)
     if (!plano) return
-    Object.assign(plano, dados)
+    const { limites, recursos, ...resto } = dados
+    Object.assign(plano, resto)
+    // Merge: recursos sem equivalente legado (ex.: pagamentoPix) ficam como o admin deixou
+    if (limites) Object.assign(plano.limites, limites)
+    if (recursos) Object.assign(plano.recursos, recursos)
   }
 
   aplicar('gratuito', {
@@ -237,8 +247,22 @@ planoConfigSchema.statics.getConfig = async function () {
   }
   if (!config.planos || config.planos.length === 0) {
     config.planos = montarPlanosPadrao(config)
+    config.migracaoPagamentoPix = true
     await config.save()
   }
+
+  // Antes de existir o recurso, a tela de Pagamento era aberta a qualquer assinante
+  // pago — os planos que já existiam mantêm o acesso; o admin desmarca se quiser
+  if (!config.migracaoPagamentoPix) {
+    config.planos.forEach(plano => {
+      if (plano.tipo === 'base' && plano.slug !== 'gratuito') {
+        plano.recursos.pagamentoPix = true
+      }
+    })
+    config.migracaoPagamentoPix = true
+    await config.save()
+  }
+
   return config
 }
 
