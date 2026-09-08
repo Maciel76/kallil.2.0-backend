@@ -39,10 +39,10 @@ router.get("/:vendaId", async (req, res) => {
     for (const item of venda.itens) {
       itensHTML += `
         <tr>
-          <td style="text-align:left;font-size:20px">${item.nome}</td>
-          <td style="text-align:center;font-size:20px">${formatQtd(item.qty, item.unidade)}</td>
-          <td style="text-align:right;font-size:20px">${item.precoUnit.toFixed(2)}</td>
-          <td style="text-align:right;font-size:20px">${item.subtotal.toFixed(2)}</td>
+          <td class="item-nome">${item.nome}</td>
+          <td class="item-quantidade">${formatQtd(item.qty, item.unidade)}</td>
+          <td class="item-valor">${item.precoUnit.toFixed(2)}</td>
+          <td class="item-valor">${item.subtotal.toFixed(2)}</td>
         </tr>`;
     }
 
@@ -59,30 +59,38 @@ router.get("/:vendaId", async (req, res) => {
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: 'Courier New', Courier, monospace;
-      font-size: 22px;
-      line-height: 1.4;
+      font-size: 11px;
+      line-height: 1.25;
       width: 100%;
       max-width: 80mm;
-      padding: 4mm;
+      padding: 3mm;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
     .center { text-align: center; }
     .bold { font-weight: bold; }
-    .divider { border-top: 1px dashed #000; margin: 8px 0; }
-    .empresa { font-size: 26px; font-weight: bold; margin-bottom: 4px; }
-    table { width: 100%; border-collapse: collapse; }
-    td { padding: 3px 0; font-size: 20px; }
-    .total-row td { font-size: 24px; font-weight: bold; padding-top: 6px; }
-    .info { font-size: 18px; color: #333; }
-    .row { display: flex; justify-content: space-between; font-size: 20px; padding: 2px 0; }
-    .row-total { display: flex; justify-content: space-between; font-size: 28px; font-weight: bold; margin: 6px 0; }
-    .rodape { font-size: 18px; color: #333; margin-top: 10px; }
-    .logo-cupom { max-width: 50mm; max-height: 30mm; margin: 0 auto 6px auto; display: block; object-fit: contain; }
+    .divider { border-top: 1px dashed #000; margin: 5px 0; }
+    .empresa { font-size: 15px; line-height: 1.15; font-weight: bold; margin-bottom: 3px; }
+    .info { font-size: 9px; line-height: 1.25; font-weight: 700; color: #000; overflow-wrap: anywhere; }
+    .titulo-cupom { font-size: 12px; line-height: 1.2; }
+    .itens { width: 100%; table-layout: fixed; border-collapse: collapse; }
+    .itens td { padding: 2px 0; font-size: 10px; line-height: 1.2; vertical-align: top; }
+    .itens .cabecalho td { font-size: 9px; font-weight: bold; padding-bottom: 3px; border-bottom: 1px solid #000; }
+    .itens .item-nome { width: 47%; padding-right: 4px; text-align: left; overflow-wrap: anywhere; font-size: 11px; font-weight: 700; color: #000; }
+    .itens .item-quantidade { width: 13%; text-align: center; white-space: nowrap; font-weight: 700; color: #000; }
+    .itens .item-valor { width: 20%; text-align: right; white-space: nowrap; font-weight: 700; color: #000; }
+    .row { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 6px; font-size: 10px; line-height: 1.25; font-weight: 700; color: #000; padding: 1px 0; }
+    .row span:last-child { text-align: right; white-space: nowrap; }
+    .section-title { font-size: 9px; font-weight: 700; color: #000; margin-bottom: 2px; }
+    .row-total { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 6px; font-size: 15px; line-height: 1.2; font-weight: bold; margin: 5px 0; }
+    .row-total span:last-child { text-align: right; white-space: nowrap; }
+    .rodape { font-size: 9px; line-height: 1.25; font-weight: 700; color: #000; margin-top: 7px; }
+    .logo-cupom { max-width: 42mm; max-height: 18mm; margin: 0 auto 5px auto; display: block; object-fit: contain; }
+    tr { page-break-inside: avoid; }
 
     @media print {
       body { width: 80mm; max-width: 80mm; }
-      .logo-cupom { max-width: 50mm; max-height: 30mm; }
+      .logo-cupom { max-width: 42mm; max-height: 18mm; }
     }
   </style>
 </head>
@@ -97,16 +105,22 @@ router.get("/:vendaId", async (req, res) => {
   </div>
 
   <div class="divider"></div>
-  <div class="center bold" style="font-size:22px">CUPOM NÃO FISCAL</div>
+  <div class="center bold titulo-cupom">CUPOM NÃO FISCAL</div>
   <div class="center info">Nº ${numCupom} · ${dataVenda}</div>
   <div class="divider"></div>
 
-  <table>
-    <tr style="font-weight:bold; border-bottom:1px solid #000">
+  <table class="itens">
+    <colgroup>
+      <col style="width:47%">
+      <col style="width:13%">
+      <col style="width:20%">
+      <col style="width:20%">
+    </colgroup>
+    <tr class="cabecalho">
       <td style="text-align:left">Item</td>
       <td style="text-align:center">Qtd</td>
       <td style="text-align:right">Unit</td>
-      <td style="text-align:right">Sub</td>
+      <td style="text-align:right">Total</td>
     </tr>
     ${itensHTML}
   </table>
@@ -130,6 +144,7 @@ router.get("/:vendaId", async (req, res) => {
   </div>
 
   <div class="divider"></div>
+  <div class="section-title">PAGAMENTO</div>
 
   ${
     venda.pagamentos && venda.pagamentos.length > 0
